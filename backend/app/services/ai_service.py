@@ -12,6 +12,7 @@ from app.services.fmp_service import (
 )
 from app.services.news_service import get_company_news, get_company_sentiment
 from app.services.edgar_service import get_10q_text, get_10k_text
+from app.services.transcript_service import get_latest_earnings_transcript
 
 load_dotenv()
 
@@ -29,6 +30,7 @@ async def build_full_context(ticker: str) -> dict:
     analyst_task      = loop.run_in_executor(None, get_analyst_consensus, ticker)
     filing_10q_task   = loop.run_in_executor(None, get_10q_text, ticker)
     filing_10k_task   = loop.run_in_executor(None, get_10k_text, ticker)
+    transcript_task   = loop.run_in_executor(None, get_latest_earnings_transcript, ticker)
 
     news_task      = get_company_news(ticker, days_back=14)
     sentiment_task = get_company_sentiment(ticker)
@@ -41,13 +43,14 @@ async def build_full_context(ticker: str) -> dict:
         analyst_task,
         filing_10q_task,
         filing_10k_task,
+        transcript_task,
         news_task,
         sentiment_task,
         return_exceptions=True
     )
 
     (profile, ratios, competitors, price_context,
-     analyst, filing_10q, filing_10k, news, sentiment) = results
+     analyst, filing_10q, filing_10k, transcript, news, sentiment) = results
 
     def safe(val):
         return None if isinstance(val, Exception) else val
@@ -67,6 +70,10 @@ async def build_full_context(ticker: str) -> dict:
         "filing_10k_excerpt":   filing_10k.get("excerpt", "")[:15000] if filing_10k else None,
         "filing_10k_date":      filing_10k.get("filingDate") if filing_10k else None,
         "filing_10k_sections":  filing_10k.get("sectionsFound", []) if filing_10k else [],
+        "transcript_remarks":   safe(transcript).get("preparedRemarks", "")[:10000] if safe(transcript) else None,
+        "transcript_qa":        safe(transcript).get("qaSection", "")[:5000] if safe(transcript) else None,
+        "transcript_quarter":   f"Q{safe(transcript).get('quarter')} {safe(transcript).get('year')}" if safe(transcript) else None,
+        "transcript_date":      safe(transcript).get("conferenceDate") if safe(transcript) else None,
         "news":                 (safe(news) or [])[:10],
         "sentiment":            safe(sentiment),
     }
@@ -108,6 +115,13 @@ You are a professional equity research analyst. Analyze the following data for {
 
 ## 10-K Annual Report (filed {data.get("filing_10k_date")}) — Sections: {data.get("filing_10k_sections")}
 {data.get("filing_10k_excerpt") or "Not available"}
+
+## Earnings Call Transcript — {data.get("transcript_quarter")} (held {data.get("transcript_date")})
+### Prepared Remarks (CEO & CFO)
+{data.get("transcript_remarks") or "Not available"}
+
+### Q&A with Analysts
+{data.get("transcript_qa") or "Not available"}
 
 ---
 
