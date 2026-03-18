@@ -77,8 +77,13 @@ You are a professional equity research analyst. Analyze the following data for {
 ## Competitor Comparison
 {json.dumps(data.get("competitors"), indent=2)}
 
-## Recent News Headlines (last 14 days)
-{json.dumps([n.get("headline") for n in data.get("news", [])], indent=2)}
+## Recent News Articles (last 14 days)
+{json.dumps([{
+    "headline": n.get("headline"),
+    "source": n.get("source"),
+    "datetime": n.get("datetime"),
+    "body": n.get("body") or n.get("summary") or ""
+} for n in data.get("news", [])], indent=2)}
 
 ## News Sentiment
 {json.dumps(data.get("sentiment"), indent=2)}
