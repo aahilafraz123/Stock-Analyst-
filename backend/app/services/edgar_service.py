@@ -4,6 +4,10 @@ import io
 import pdfplumber
 from bs4 import BeautifulSoup
 
+from bs4 import XMLParsedAsHTMLWarning
+import warnings
+warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
+
 HEADERS = {"User-Agent": "stockanalyzer contact@stockanalyzer.com"}
 
 def get_cik(ticker: str):
@@ -258,4 +262,94 @@ def get_10q_text(ticker: str):
         "source": "html",
         "sectionsFound": list(sections.keys()),
         "excerpt": excerpt[:20000]
+    }
+def get_10k_text(ticker: str):
+    """Get key sections from the most recent 10-K annual report"""
+    cik = get_cik(ticker)
+    if not cik:
+        return None
+
+    url = f"https://data.sec.gov/submissions/CIK{cik}.json"
+    response = requests.get(url, headers=HEADERS)
+    data = response.json()
+
+    filings = data.get("filings", {}).get("recent", {})
+    forms = filings.get("form", [])
+    dates = filings.get("filingDate", [])
+    accession_numbers = filings.get("accessionNumber", [])
+    primary_documents = filings.get("primaryDocument", [])
+
+    # Find the most recent 10-K
+    filing_info = None
+    for i, form in enumerate(forms):
+        if form == "10-K":
+            accession = accession_numbers[i].replace("-", "")
+            filing_info = {
+                "filingDate": dates[i],
+                "accessionNumber": accession_numbers[i],
+                "accession": accession,
+                "url": f"https://www.sec.gov/Archives/edgar/data/{int(cik)}/{accession}/{primary_documents[i]}"
+            }
+            break
+
+    if not filing_info:
+        return None
+
+    # Fetch the filing
+    cik_int = int(cik)
+    accession = filing_info["accession"]
+    index_url = f"https://www.sec.gov/Archives/edgar/data/{cik_int}/{accession}/{accession}-index.htm"
+
+    response = requests.get(index_url, headers=HEADERS)
+    soup = BeautifulSoup(response.content, "lxml")
+
+    filing_url = None
+    for link in soup.find_all("a", href=True):
+        href = link["href"]
+        if href.endswith(".htm") and "index" not in href.lower():
+            filing_url = f"https://www.sec.gov{href}" if href.startswith("/") else href
+            break
+
+    if not filing_url:
+        filing_url = filing_info["url"]
+
+    response = requests.get(filing_url, headers=HEADERS, timeout=60)
+    soup = BeautifulSoup(response.content, "lxml")
+
+    for tag in soup(["script", "style", "ix:header"]):
+        tag.decompose()
+
+    text = soup.get_text(separator=" ")
+    text = re.sub(r'\s+', ' ', text).strip()
+
+    # Extract key sections — 10-K has more comprehensive versions of these
+    sections = extract_key_sections(text)
+
+    # For 10-K we specifically want business overview and full risk factors
+    excerpt_parts = []
+    if sections.get("business_overview"):
+        excerpt_parts.append(
+            "=== BUSINESS OVERVIEW (10-K) ===\n" + 
+            sections["business_overview"]
+        )
+    if sections.get("risk_factors"):
+        excerpt_parts.append(
+            "=== RISK FACTORS (10-K Annual) ===\n" + 
+            sections["risk_factors"]
+        )
+    if sections.get("mda"):
+        excerpt_parts.append(
+            "=== MD&A (10-K Annual) ===\n" + 
+            sections["mda"]
+        )
+
+    excerpt = "\n\n".join(excerpt_parts)
+
+    return {
+        "ticker": ticker.upper(),
+        "company": data.get("name"),
+        "filingDate": filing_info["filingDate"],
+        "filingUrl": filing_url,
+        "sectionsFound": list(sections.keys()),
+        "excerpt": excerpt[:15000]
     }

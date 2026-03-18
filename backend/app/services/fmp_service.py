@@ -65,7 +65,6 @@ def get_peers(ticker: str):
 def get_competitor_ratios(ticker: str):
     peers = get_peers(ticker)
     all_tickers = [ticker] + peers[:5]
-
     results = {}
     for t in all_tickers:
         ratios = get_financial_ratios(t)
@@ -83,4 +82,89 @@ def get_competitor_ratios(ticker: str):
                 "evToEbitda": ratios.get("evToEbitda"),
             }
     return results
-    
+
+def get_price_context(ticker: str):
+    """Get historical price context and momentum data"""
+    stock = yf.Ticker(ticker)
+    info = stock.info
+
+    if not info:
+        return None
+
+    current_price = info.get("currentPrice")
+    week52_high = info.get("fiftyTwoWeekHigh")
+    week52_low = info.get("fiftyTwoWeekLow")
+
+    price_position = None
+    if week52_high and week52_low and current_price:
+        range_size = week52_high - week52_low
+        if range_size > 0:
+            price_position = round(
+                ((current_price - week52_low) / range_size) * 100, 1
+            )
+
+    hist = stock.history(period="3mo")
+    price_1mo_ago = None
+    price_3mo_ago = None
+    change_1mo = None
+    change_3mo = None
+
+    if not hist.empty:
+        price_3mo_ago = round(hist["Close"].iloc[0], 2)
+        if len(hist) >= 21:
+            price_1mo_ago = round(hist["Close"].iloc[-21], 2)
+
+        if current_price and price_3mo_ago:
+            change_3mo = round(
+                ((current_price - price_3mo_ago) / price_3mo_ago) * 100, 1
+            )
+        if current_price and price_1mo_ago:
+            change_1mo = round(
+                ((current_price - price_1mo_ago) / price_1mo_ago) * 100, 1
+            )
+
+    return {
+        "currentPrice": current_price,
+        "52weekHigh": week52_high,
+        "52weekLow": week52_low,
+        "52weekRange": f"${week52_low} - ${week52_high}" if week52_low and week52_high else None,
+        "priceVs52weekRange": f"{price_position}% of range" if price_position else None,
+        "change1Month": f"{change_1mo}%" if change_1mo is not None else None,
+        "change3Month": f"{change_3mo}%" if change_3mo is not None else None,
+        "50dayAverage": info.get("fiftyDayAverage"),
+        "200dayAverage": info.get("twoHundredDayAverage"),
+        "priceVs50dma": round(
+            ((current_price - info.get("fiftyDayAverage")) /
+             info.get("fiftyDayAverage")) * 100, 1
+        ) if current_price and info.get("fiftyDayAverage") else None,
+        "priceVs200dma": round(
+            ((current_price - info.get("twoHundredDayAverage")) /
+             info.get("twoHundredDayAverage")) * 100, 1
+        ) if current_price and info.get("twoHundredDayAverage") else None,
+    }
+
+def get_analyst_consensus(ticker: str):
+    """Get Wall Street analyst consensus and price targets"""
+    stock = yf.Ticker(ticker)
+    info = stock.info
+
+    if not info:
+        return None
+
+    current_price = info.get("currentPrice")
+    target_price = info.get("targetMeanPrice")
+
+    upside = None
+    if current_price and target_price:
+        upside = round(((target_price - current_price) / current_price) * 100, 1)
+
+    return {
+        "targetHighPrice": info.get("targetHighPrice"),
+        "targetLowPrice": info.get("targetLowPrice"),
+        "targetMeanPrice": target_price,
+        "targetMedianPrice": info.get("targetMedianPrice"),
+        "impliedUpside": f"{upside}%" if upside is not None else None,
+        "numberOfAnalysts": info.get("numberOfAnalystOpinions"),
+        "recommendationMean": info.get("recommendationMean"),
+        "recommendationKey": info.get("recommendationKey"),
+    }
