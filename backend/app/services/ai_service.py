@@ -13,6 +13,8 @@ from app.services.fmp_service import (
 from app.services.news_service import get_company_news, get_company_sentiment
 from app.services.edgar_service import get_10q_text, get_10k_text
 from app.services.transcript_service import get_latest_earnings_transcript
+from app.services.insider_service import get_insider_trades
+from app.services.institutional_service import get_institutional_ownership
 
 load_dotenv()
 
@@ -31,6 +33,8 @@ async def build_full_context(ticker: str) -> dict:
     filing_10q_task   = loop.run_in_executor(None, get_10q_text, ticker)
     filing_10k_task   = loop.run_in_executor(None, get_10k_text, ticker)
     transcript_task   = loop.run_in_executor(None, get_latest_earnings_transcript, ticker)
+    insider_task        = loop.run_in_executor(None, get_insider_trades, ticker)
+    institutional_task  = loop.run_in_executor(None, get_institutional_ownership, ticker)
 
     news_task      = get_company_news(ticker, days_back=14)
     sentiment_task = get_company_sentiment(ticker)
@@ -44,13 +48,16 @@ async def build_full_context(ticker: str) -> dict:
         filing_10q_task,
         filing_10k_task,
         transcript_task,
+        insider_task,
+        institutional_task,
         news_task,
         sentiment_task,
         return_exceptions=True
     )
 
     (profile, ratios, competitors, price_context,
-     analyst, filing_10q, filing_10k, transcript, news, sentiment) = results
+     analyst, filing_10q, filing_10k, transcript, insider,
+     institutional, news, sentiment) = results
 
     def safe(val):
         return None if isinstance(val, Exception) else val
@@ -74,7 +81,13 @@ async def build_full_context(ticker: str) -> dict:
         "transcript_qa":        safe(transcript).get("qaSection", "")[:5000] if safe(transcript) else None,
         "transcript_quarter":   f"Q{safe(transcript).get('quarter')} {safe(transcript).get('year')}" if safe(transcript) else None,
         "transcript_date":      safe(transcript).get("conferenceDate") if safe(transcript) else None,
-        "news":                 (safe(news) or [])[:10],
+        "insider_summary":      safe(insider).get("summary") if safe(insider) else None,
+        "insider_trades":       safe(insider).get("trades", [])[:8] if safe(insider) else [],
+        "insider_buy_count":        safe(insider).get("buyCount", 0) if safe(insider) else 0,
+        "insider_sell_count":       safe(insider).get("sellCount", 0) if safe(insider) else 0,
+        "institutional_summary":    safe(institutional).get("summary") if safe(institutional) else None,
+        "institutional_top":        safe(institutional).get("topInstitutions", [])[:5] if safe(institutional) else [],
+        "news":                     (safe(news) or [])[:10],
         "sentiment":            safe(sentiment),
     }
 
@@ -106,6 +119,14 @@ You are a professional equity research analyst. Analyze the following data for {
     "datetime": n.get("datetime"),
     "body": n.get("body") or n.get("summary") or ""
 } for n in data.get("news", [])], indent=2)}
+
+## Insider Trading Activity
+Summary: {data.get("insider_summary") or "Not available"}
+Recent trades: {json.dumps(data.get("insider_trades", []), indent=2)}
+
+## Institutional Ownership
+Summary: {data.get("institutional_summary") or "Not available"}
+Top holders: {json.dumps(data.get("institutional_top", []), indent=2)}
 
 ## News Sentiment
 {json.dumps(data.get("sentiment"), indent=2)}
