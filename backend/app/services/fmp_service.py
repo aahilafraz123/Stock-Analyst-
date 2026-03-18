@@ -143,6 +143,23 @@ def get_price_context(ticker: str):
         ) if current_price and info.get("twoHundredDayAverage") else None,
     }
 
+def get_price_history(ticker: str):
+    stock = yf.Ticker(ticker)
+    hist = stock.history(period="6mo")
+    if hist is None or hist.empty:
+        return None
+    result = []
+    for date, row in hist.iterrows():
+        result.append({
+            "date": date.strftime("%Y-%m-%d"),
+            "open": round(float(row["Open"]), 2),
+            "high": round(float(row["High"]), 2),
+            "low": round(float(row["Low"]), 2),
+            "close": round(float(row["Close"]), 2),
+            "volume": int(row["Volume"]),
+        })
+    return result
+
 def get_analyst_consensus(ticker: str):
     """Get Wall Street analyst consensus and price targets"""
     stock = yf.Ticker(ticker)

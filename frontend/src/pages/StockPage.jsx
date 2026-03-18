@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getProfile, getRatios, getCompetitors, getAnalysis } from '../services/api'
+import { getProfile, getRatios, getCompetitors, getHistory, getAnalysis } from '../services/api'
 import OverviewCard from '../components/OverviewCard'
 import RatiosPanel from '../components/RatiosPanel'
 import CompetitorTable from '../components/CompetitorTable'
 import AnalysisReport from '../components/AnalysisReport'
+import PriceChart from '../components/PriceChart'
 import Loader from '../components/Loader'
 
 export default function StockPage() {
@@ -13,6 +14,7 @@ export default function StockPage() {
   const [profile, setProfile] = useState(null)
   const [ratios, setRatios] = useState(null)
   const [competitors, setCompetitors] = useState(null)
+  const [history, setHistory] = useState(null)
   const [analysis, setAnalysis] = useState(null)
   const [loadingBase, setLoadingBase] = useState(true)
   const [loadingAnalysis, setLoadingAnalysis] = useState(true)
@@ -24,17 +26,20 @@ export default function StockPage() {
     setProfile(null)
     setRatios(null)
     setCompetitors(null)
+    setHistory(null)
     setAnalysis(null)
 
-    // Stage 1 — load fast data first (profile, ratios, competitors)
+    // Stage 1 — load fast data first (profile, ratios, competitors, history)
     Promise.all([
       getProfile(ticker),
       getRatios(ticker),
       getCompetitors(ticker),
-    ]).then(([p, r, c]) => {
+      getHistory(ticker),
+    ]).then(([p, r, c, h]) => {
       setProfile(p.data)
       setRatios(r.data)
       setCompetitors(c.data)
+      setHistory(h.data)
       setLoadingBase(false)
     }).catch(() => {
       setError('Failed to load data for ' + ticker)
@@ -77,6 +82,7 @@ export default function StockPage() {
       <div style={styles.grid}>
         <div style={styles.colLeft}>
           <OverviewCard profile={profile} ratios={ratios} />
+          <PriceChart history={history} ticker={ticker} />
           <RatiosPanel ratios={ratios} />
         </div>
         <div style={styles.colRight}>
