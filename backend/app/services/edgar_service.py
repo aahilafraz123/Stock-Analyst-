@@ -84,39 +84,79 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> str:
 def extract_key_sections(full_text: str) -> dict:
     """
     Extract the most investment-relevant sections from the 10-Q text.
-    These sections appear consistently across all company 10-Q filings.
+    Handles variations in section naming across different companies.
+    Uses longest-content match to skip table of contents references.
     """
     text_lower = full_text.lower()
     sections = {}
 
-    # Define the sections we want and what to search for
+    # Each entry is (section_name, [list of possible headings])
+    # Ordered from most specific to least specific
     section_markers = [
         ("mda", [
+            "management's discussion and analysis of financial condition and results of operations",
             "management's discussion and analysis",
+            "management discussion and analysis of financial condition",
             "management discussion and analysis",
-            "management's discussion"
+            "item 2. management",
+            "item 2.",
         ]),
         ("risk_factors", [
+            "item 1a. risk factors",
+            "item 1a risk factors",
             "risk factors",
-            "item 1a"
         ]),
         ("liquidity", [
             "liquidity and capital resources",
-            "liquidity"
+            "liquidity & capital resources",
+            "liquidity",
         ]),
         ("results_of_operations", [
             "results of operations",
-            "results from operations"
+            "results from operations",
+            "operating results",
+        ]),
+        ("business_overview", [
+            "overview",
+            "executive overview",
+            "business overview",
+            "company overview",
         ]),
     ]
 
     for section_name, markers in section_markers:
+        best_text = None
+        best_length = 0
+
         for marker in markers:
-            idx = text_lower.find(marker)
-            if idx != -1:
-                # Extract up to 8000 chars per section
-                sections[section_name] = full_text[idx:idx + 8000].strip()
-                break
+            # Find ALL occurrences of this marker, not just the first
+            start = 0
+            while True:
+                idx = text_lower.find(marker, start)
+                if idx == -1:
+                    break
+
+                # Extract a chunk after this occurrence
+                candidate = full_text[idx:idx + 25000].strip()
+
+                # Skip if this looks like a table of contents entry
+                # (table of contents entries are short lines followed by a page number)
+                first_line = candidate.split('\n')[0] if '\n' in candidate else candidate[:100]
+                if len(first_line.strip()) < 80 and any(
+                    char.isdigit() for char in first_line[-10:]
+                ):
+                    start = idx + len(marker)
+                    continue
+
+                # Pick the occurrence with the most content
+                if len(candidate) > best_length:
+                    best_length = len(candidate)
+                    best_text = candidate
+
+                start = idx + len(marker)
+
+        if best_text:
+            sections[section_name] = best_text
 
     return sections
 

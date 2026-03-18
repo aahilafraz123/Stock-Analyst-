@@ -55,8 +55,9 @@ async def build_full_context(ticker: str) -> dict:
         "profile": profile if not isinstance(profile, Exception) else None,
         "ratios": ratios if not isinstance(ratios, Exception) else None,
         "competitors": competitors if not isinstance(competitors, Exception) else None,
-        "filing_excerpt": filing.get("excerpt")[:4000] if filing else None,
+        "filing_excerpt": filing.get("excerpt")[:20000] if filing else None,
         "filing_date": filing.get("filingDate") if filing else None,
+        "filing_sections": filing.get("sectionsFound", []) if filing else [],
         "news": news[:10] if news else [],
         "sentiment": sentiment,
     }
@@ -82,7 +83,7 @@ You are a professional equity research analyst. Analyze the following data for {
 ## News Sentiment
 {json.dumps(data.get("sentiment"), indent=2)}
 
-## 10-Q Filing Excerpt (filed {data.get("filing_date")})
+## 10-Q Filing (filed {data.get("filing_date")}) — Sections: {data.get("filing_sections", [])}
 {data.get("filing_excerpt") or "Not available"}
 
 ---
