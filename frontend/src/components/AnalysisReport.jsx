@@ -37,9 +37,25 @@ export default function AnalysisReport({ analysis }) {
           <span style={styles.signalLabel}>VALUATION</span>
           <span style={styles.signalValue}>{analysis.valuation?.assessment}</span>
         </div>
+        <div style={styles.signal}>
+          <span style={styles.signalLabel}>FINANCIAL HEALTH</span>
+          <span style={{ ...styles.signalValue, color: analysis.financialHealth?.assessment === 'STRONG' ? 'var(--accent-green)' : analysis.financialHealth?.assessment === 'WEAK' ? 'var(--accent-red)' : 'var(--accent-yellow)' }}>
+            {analysis.financialHealth?.assessment}
+          </span>
+        </div>
+        <div style={styles.signal}>
+          <span style={styles.signalLabel}>ANALYST TARGET</span>
+          <span style={{ ...styles.signalValue, color: 'var(--accent-green)' }}>
+            {analysis.analystConsensus
+              ? analysis.analystConsensus.match(/\$[\d,.]+/)?.[0] || '—'
+              : '—'}
+          </span>
+        </div>
       </div>
 
       <Section label="EXECUTIVE SUMMARY" content={analysis.summary} />
+      <Section label="PRICE CONTEXT & MOMENTUM" content={analysis.priceContext} />
+      <Section label="WALL STREET CONSENSUS" content={analysis.analystConsensus} />
       <Section label="RECOMMENDATION REASONING" content={analysis.recommendationReasoning} />
       <Section label="VALUATION" content={analysis.valuation?.reasoning} />
       <Section label="COMPETITIVE POSITION" content={analysis.competitivePosition} />
@@ -51,8 +67,7 @@ export default function AnalysisReport({ analysis }) {
       </div>
 
       <div style={styles.healthRow}>
-        <span style={styles.healthLabel}>FINANCIAL HEALTH</span>
-        <span style={styles.healthValue}>{analysis.financialHealth?.assessment}</span>
+        <span style={styles.healthLabel}>FINANCIAL HEALTH DETAIL</span>
         <span style={styles.healthReason}>{analysis.financialHealth?.reasoning}</span>
       </div>
     </div>
@@ -60,6 +75,7 @@ export default function AnalysisReport({ analysis }) {
 }
 
 function Section({ label, content }) {
+  if (!content) return null
   return (
     <div style={styles.section}>
       <div style={styles.sectionLabel}>{label}</div>
@@ -93,7 +109,7 @@ const styles = {
   },
   topRow: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(4, 1fr)',
+    gridTemplateColumns: 'repeat(3, 1fr)',
     gap: '1px',
     background: 'var(--border)',
     border: '1px solid var(--border)',
@@ -167,12 +183,7 @@ const styles = {
     fontSize: '9px',
     color: 'var(--text-muted)',
     letterSpacing: '3px',
-  },
-  healthValue: {
-    fontFamily: 'var(--font-mono)',
-    fontSize: '16px',
-    fontWeight: 700,
-    color: 'var(--accent-green)',
+    marginBottom: '4px',
   },
   healthReason: {
     fontFamily: 'var(--font-sans)',

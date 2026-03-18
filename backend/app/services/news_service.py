@@ -18,7 +18,7 @@ async def fetch_article_text(url: str) -> str:
         article.download()
         article.parse()
         # Return first 2000 chars of body — enough context without blowing up the prompt
-        return article.text[:2000] if article.text else ""
+        return article.text[:5000] if article.text else ""
     except Exception:
         return ""
 
@@ -45,7 +45,7 @@ async def get_company_news(ticker: str, days_back: int = 7):
     # Limit to 5 most recent articles and fetch their full text
     # We cap at 5 because fetching full articles takes time
     articles = []
-    for item in data[:5]:
+    for item in data[:10]:
         article_url = item.get("url", "")
         body = await fetch_article_text(article_url)
 
