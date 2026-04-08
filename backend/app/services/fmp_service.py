@@ -168,3 +168,35 @@ def get_analyst_consensus(ticker: str):
         "recommendationMean": info.get("recommendationMean"),
         "recommendationKey": info.get("recommendationKey"),
     }
+
+def get_price_history(ticker: str, period: str = "1Y"):
+    period_map = {
+        "1W": ("7d",  "30m"),
+        "1M": ("1mo", "1d"),
+        "3M": ("3mo", "1d"),
+        "6M": ("6mo", "1d"),
+        "1Y": ("1y",  "1d"),
+        "2Y": ("2y",  "1wk"),
+    }
+
+    yf_period, interval = period_map.get(period.upper(), ("1y", "1d"))
+
+    stock = yf.Ticker(ticker)
+    hist = stock.history(period=yf_period, interval=interval)
+
+    if hist is None or hist.empty:
+        return []
+
+    result = []
+    for dt, row in hist.iterrows():
+        result.append({
+            "date": dt.strftime("%Y-%m-%d") if interval in ("1d", "1wk")
+                    else dt.strftime("%Y-%m-%d %H:%M"),
+            "open":  round(float(row["Open"]),  2),
+            "high":  round(float(row["High"]),  2),
+            "low":   round(float(row["Low"]),   2),
+            "close": round(float(row["Close"]), 2),
+            "volume": int(row["Volume"]),
+        })
+
+    return result

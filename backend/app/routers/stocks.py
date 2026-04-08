@@ -3,7 +3,8 @@ from app.services.fmp_service import (
     get_company_profile,
     get_financial_ratios,
     get_income_statement,
-    get_competitor_ratios
+    get_competitor_ratios,
+    get_price_history,
 )
 
 router = APIRouter()
@@ -35,4 +36,10 @@ def competitor_comparison(ticker: str):
     if not data:
         raise HTTPException(status_code=404, detail=f"No competitor data found for {ticker}")
     return data
-    
+
+@router.get("/{ticker}/history")
+def price_history(ticker: str, period: str = "1Y"):
+    data = get_price_history(ticker.upper(), period)
+    if data is None:
+        raise HTTPException(status_code=404, detail=f"No history found for {ticker}")
+    return data

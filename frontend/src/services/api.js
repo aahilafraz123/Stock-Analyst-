@@ -10,3 +10,5 @@ export const getRatios = (ticker) => api.get(`/stocks/${ticker}/ratios`)
 export const getCompetitors = (ticker) => api.get(`/stocks/${ticker}/competitors`)
 export const getNews = (ticker) => api.get(`/news/${ticker}`)
 export const getAnalysis = (ticker) => api.get(`/analysis/${ticker}`)
+export const getHistory = (ticker, period = '1Y') =>
+  api.get(`/stocks/${ticker}/history`, { params: { period } })

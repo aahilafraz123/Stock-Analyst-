@@ -3,10 +3,10 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { getProfile, getRatios, getCompetitors, getAnalysis } from '../services/api'
 import OverviewCard from '../components/OverviewCard'
 import RatiosPanel from '../components/RatiosPanel'
+import PriceChart from '../components/PriceChart'
 import CompetitorTable from '../components/CompetitorTable'
 import AnalysisReport from '../components/AnalysisReport'
 import Loader from '../components/Loader'
-
 export default function StockPage() {
   const { ticker } = useParams()
   const navigate = useNavigate()
@@ -77,6 +77,7 @@ export default function StockPage() {
       <div style={styles.grid}>
         <div style={styles.colLeft}>
           <OverviewCard profile={profile} ratios={ratios} />
+          <PriceChart ticker={ticker} currentPrice={profile?.currentPrice} />
           <RatiosPanel ratios={ratios} />
         </div>
         <div style={styles.colRight}>
