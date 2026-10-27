@@ -12,6 +12,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from app import db
+from app.config import settings
 from app.rag.chunking import Chunk
 
 db.register_schema(
@@ -120,6 +121,19 @@ SECTION_TITLES = {
 }
 
 
+# Dense matrices are rebuilt from SQLite blobs only when the index changes; report
+# generation runs six topic queries back to back over the same documents.
+_index_version = 0
+_matrix_cache: dict[tuple, tuple[list[str], np.ndarray]] = {}
+_MATRIX_CACHE_SIZE = 16
+
+
+def _bump_version() -> None:
+    global _index_version
+    _index_version += 1
+    _matrix_cache.clear()
+
+
 @dataclass
 class DocumentMeta:
     doc_id: str
@@ -167,6 +181,7 @@ def add_document(
                 time.time(),
             ),
         )
+        _bump_version()
         for i, chunk in enumerate(chunks):
             chunk_id = f"{meta.doc_id}#{chunk.section}-{chunk.ordinal}"
             vector = embeddings[i].astype(np.float32).tobytes() if embeddings is not None else None
@@ -191,6 +206,7 @@ def delete_document(doc_id: str, conn: sqlite3.Connection | None = None, commit:
     conn.execute("DELETE FROM rag_fts WHERE doc_id = ?", (doc_id,))
     conn.execute("DELETE FROM rag_chunks WHERE doc_id = ?", (doc_id,))
     conn.execute("DELETE FROM rag_documents WHERE doc_id = ?", (doc_id,))
+    _bump_version()
     if commit:
         conn.commit()
 
@@ -242,6 +258,23 @@ def lexical_search(ticker: str, query: str, doc_ids: list[str] | None = None, li
 
 
 def dense_matrix(ticker: str, embed_model: str, doc_ids: list[str] | None = None) -> tuple[list[str], np.ndarray]:
+    key = (
+        str(settings.db_path),
+        ticker,
+        embed_model,
+        tuple(sorted(doc_ids or ())),
+        _index_version,
+    )
+    if (hit := _matrix_cache.get(key)) is not None:
+        return hit
+    result = _load_matrix(ticker, embed_model, doc_ids)
+    if len(_matrix_cache) >= _MATRIX_CACHE_SIZE:
+        _matrix_cache.pop(next(iter(_matrix_cache)))
+    _matrix_cache[key] = result
+    return result
+
+
+def _load_matrix(ticker: str, embed_model: str, doc_ids: list[str] | None) -> tuple[list[str], np.ndarray]:
     clause, params = _doc_filter(doc_ids, "c.doc_id")
     rows = (
         db.connect()
