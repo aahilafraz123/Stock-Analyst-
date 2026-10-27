@@ -78,6 +78,7 @@ def test_stream_emits_progress_then_report(monkeypatch, fixture_text):
     events = asyncio.run(collect())
     stages = [e["stage"] for e in events if e["type"] == "stage"]
     assert stages == ["sources", "indexing", "retrieval", "llm"]
+    assert [e["phase"] for e in events if e["type"] == "llm"] == ["thinking", "writing"]
     finals = [e for e in events if e["type"] == "source" and e["status"] != "pending"]
     assert len(finals) == 13
     assert events[-1]["type"] == "report" and events[-1]["data"]["ticker"] == "EXMP"
@@ -92,3 +93,18 @@ def test_stream_reports_errors_as_events(monkeypatch, fixture_text):
 
     last = asyncio.run(collect())[-1]
     assert last == {"type": "error", "status": 404, "error": "not_found", "detail": "Ticker ZZZZ not found"}
+
+
+def test_hung_source_times_out_without_blocking_the_report(monkeypatch, fixture_text):
+    import time as _time
+
+    from app.services import insider, research
+
+    install_fake_sources(monkeypatch, fixture_text)
+    install_fake_llm(monkeypatch)
+    monkeypatch.setattr(research, "SOURCE_TIMEOUT", 0.2)
+    monkeypatch.setattr(insider, "get_insider_trades", lambda t: _time.sleep(1) or {"summary": "late"})
+    result = asyncio.run(run_analysis("EXMP"))
+    status = {s["name"]: s for s in result["meta"]["sourceStatus"]}
+    assert status["insider"]["status"] == "error" and "timed out" in status["insider"]["detail"]
+    assert result["report"]["recommendation"] == "BUY"

@@ -98,8 +98,11 @@ def install_fake_llm(monkeypatch, report=None):
 
     calls = []
 
-    async def structured(system, content, output, max_tokens=16000):
+    async def structured(system, content, output, max_tokens=32000, on_progress=None):
         calls.append({"system": system, "content": content})
+        if on_progress:
+            await on_progress({"phase": "thinking"})
+            await on_progress({"phase": "writing", "chars": 1200})
         usage = {
             "model": "claude-test",
             "inputTokens": 1000,

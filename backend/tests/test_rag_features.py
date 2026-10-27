@@ -68,7 +68,7 @@ def test_risk_diff_verifies_quotes_and_caches(monkeypatch, fixture_text):
     monkeypatch.setattr(edgar, "get_filing", filing)
     calls = []
 
-    async def structured(system, content, output, max_tokens=16000):
+    async def structured(system, content, output, max_tokens=32000, on_progress=None):
         calls.append(content)
         real = "Cybersecurity incidents affecting our monitoring platform could expose customer data"
         result = RiskFactorDiff(

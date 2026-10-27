@@ -3,6 +3,7 @@
 import copy
 import logging
 import time
+from collections.abc import Awaitable, Callable
 from typing import Any, TypeVar
 
 import anthropic
@@ -14,6 +15,7 @@ from app.errors import ConfigError, LLMError, UpstreamError
 log = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
+Progress = Callable[[dict], Awaitable[None]]
 SOURCE = "Anthropic"
 
 _client: anthropic.AsyncAnthropic | None = None
@@ -78,25 +80,37 @@ def _usage(response, started: float) -> dict:
     }
 
 
+def _translate(exc: Exception) -> Exception:
+    """Map SDK exceptions (most specific first) to the app's typed errors."""
+    if isinstance(exc, anthropic.AuthenticationError):
+        return ConfigError("Anthropic rejected the API key (check ANTHROPIC_API_KEY)", source=SOURCE)
+    if isinstance(exc, anthropic.PermissionDeniedError):
+        return ConfigError(f"Anthropic API key lacks access: {exc.message}", source=SOURCE)
+    if isinstance(exc, anthropic.RateLimitError):
+        return LLMError("Anthropic rate limit hit; retry shortly", source=SOURCE)
+    if isinstance(exc, anthropic.BadRequestError):
+        return LLMError(f"Anthropic rejected the request: {exc.message}", source=SOURCE)
+    if isinstance(exc, anthropic.APIStatusError):
+        return LLMError(f"Anthropic API error {exc.status_code}: {exc.message}", source=SOURCE)
+    if isinstance(exc, anthropic.APIConnectionError):
+        return UpstreamError(f"Could not reach the Anthropic API: {exc}", source=SOURCE)
+    if isinstance(exc, TypeError) and any(w in str(exc).lower() for w in ("authentication", "api_key")):
+        return ConfigError("ANTHROPIC_API_KEY is not set", source=SOURCE)  # no credentials resolved
+    return exc
+
+
+def _params(**params) -> dict:
+    return {"model": settings.anthropic_model, **params, **_request_options()}
+
+
 async def _create(**params):
     try:
-        return await client().messages.create(model=settings.anthropic_model, **params, **_request_options())
-    except anthropic.AuthenticationError as exc:
-        raise ConfigError("Anthropic rejected the API key (check ANTHROPIC_API_KEY)", source=SOURCE) from exc
-    except anthropic.PermissionDeniedError as exc:
-        raise ConfigError(f"Anthropic API key lacks access: {exc.message}", source=SOURCE) from exc
-    except anthropic.RateLimitError as exc:
-        raise LLMError("Anthropic rate limit hit; retry shortly", source=SOURCE) from exc
-    except anthropic.BadRequestError as exc:
-        raise LLMError(f"Anthropic rejected the request: {exc.message}", source=SOURCE) from exc
-    except anthropic.APIStatusError as exc:
-        raise LLMError(f"Anthropic API error {exc.status_code}: {exc.message}", source=SOURCE) from exc
-    except anthropic.APIConnectionError as exc:
-        raise UpstreamError(f"Could not reach the Anthropic API: {exc}", source=SOURCE) from exc
-    except TypeError as exc:  # raised by the SDK when no credentials resolve at all
-        if "authentication" in str(exc).lower() or "api_key" in str(exc).lower():
-            raise ConfigError("ANTHROPIC_API_KEY is not set", source=SOURCE) from exc
-        raise
+        return await client().messages.create(**_params(**params))
+    except Exception as exc:
+        translated = _translate(exc)
+        if translated is exc:
+            raise
+        raise translated from exc
 
 
 def _check_stop(response) -> None:
@@ -113,9 +127,17 @@ def _text_blocks(response) -> list:
     return [b for b in response.content if getattr(b, "type", None) == "text"]
 
 
-async def structured(system: str, content: str | list, output: type[T], max_tokens: int = 16000) -> tuple[T, dict]:
+async def structured(
+    system: str,
+    content: str | list,
+    output: type[T],
+    max_tokens: int = 32000,
+    on_progress: Progress | None = None,
+) -> tuple[T, dict]:
+    """Schema-constrained JSON output, streamed so long inputs don't hit HTTP timeouts
+    and so callers can show live progress (`thinking`, then `writing` with a char count)."""
     started = time.perf_counter()
-    response = await _create(
+    params = _params(
         max_tokens=max_tokens,
         system=system,
         messages=[{"role": "user", "content": content}],
@@ -124,6 +146,27 @@ async def structured(system: str, content: str | list, output: type[T], max_toke
             "effort": settings.anthropic_effort,
         },
     )
+    try:
+        async with client().messages.stream(**params) as stream:
+            phase, chars, last_emit = None, 0, 0.0
+            async for event in stream:
+                if on_progress is None:
+                    continue
+                if event.type == "thinking" and phase is None:
+                    phase = "thinking"
+                    await on_progress({"phase": phase})
+                elif event.type == "text":
+                    chars += len(event.text)
+                    now = time.perf_counter()
+                    if phase != "writing" or now - last_emit > 0.75:
+                        phase, last_emit = "writing", now
+                        await on_progress({"phase": phase, "chars": chars})
+            response = await stream.get_final_message()
+    except Exception as exc:
+        translated = _translate(exc)
+        if translated is exc:
+            raise
+        raise translated from exc
     _check_stop(response)
     blocks = _text_blocks(response)
     if not blocks:

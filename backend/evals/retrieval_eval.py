@@ -47,19 +47,30 @@ def load_fixture_corpus() -> str:
 
     fixtures = HERE.parent / "tests" / "fixtures"
     for form, name, acc in (("10-K", "example_10k.html", "1"), ("10-Q", "example_10q.html", "2")):
-        ingest_filing({
-            "ticker": "EXMP", "form": form, "accessionNumber": f"0000000000-26-00000{acc}",
-            "filingDate": "2026-02-01", "reportDate": "2025-12-31", "url": None,
-            "sections": extract_sections(html_to_text((fixtures / name).read_text()), form),
-        })
-    ingest_transcript({
-        "ticker": "EXMP", "year": 2026, "quarter": 1, "conferenceDate": "2026-04-20",
-        "preparedRemarks": "Good afternoon and thank you for joining. Software bookings were a record this quarter "
-        "and hardware demand stabilised. Given this momentum we are raising our full-year revenue guidance to 11% "
-        "growth, up from our prior outlook of 9%.",
-        "qaSection": "Our first question asks about tariffs on imported sensors. We expect tariffs to cost about "
-        "50 basis points of hardware gross margin this year and we are qualifying a second sensor supplier.",
-    })
+        ingest_filing(
+            {
+                "ticker": "EXMP",
+                "form": form,
+                "accessionNumber": f"0000000000-26-00000{acc}",
+                "filingDate": "2026-02-01",
+                "reportDate": "2025-12-31",
+                "url": None,
+                "sections": extract_sections(html_to_text((fixtures / name).read_text()), form),
+            }
+        )
+    ingest_transcript(
+        {
+            "ticker": "EXMP",
+            "year": 2026,
+            "quarter": 1,
+            "conferenceDate": "2026-04-20",
+            "preparedRemarks": "Good afternoon and thank you for joining. Software bookings were a record this quarter "
+            "and hardware demand stabilised. Given this momentum we are raising our full-year revenue guidance to 11% "
+            "growth, up from our prior outlook of 9%.",
+            "qaSection": "Our first question asks about tariffs on imported sensors. We expect tariffs to cost about "
+            "50 basis points of hardware gross margin this year and we are qualifying a second sensor supplier.",
+        }
+    )
     return "EXMP"
 
 

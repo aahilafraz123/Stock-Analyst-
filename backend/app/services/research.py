@@ -17,7 +17,7 @@ from typing import Any
 
 from app import llm
 from app.config import settings
-from app.errors import AppError, ConfigError, NotFoundError, as_app_error
+from app.errors import AppError, ConfigError, NotFoundError, UpstreamError, as_app_error
 from app.rag import retriever
 from app.rag.embeddings import get_embedder
 from app.rag.ingest import filing_doc_id, ingest_filing, ingest_transcript, transcript_doc_id
@@ -39,6 +39,7 @@ TOPICS = {
     "competition": "competition competitive position market share competitors",
 }
 CHUNKS_PER_TOPIC = 3
+SOURCE_TIMEOUT = 60  # seconds; a hung source degrades to "error" instead of stalling the report
 
 
 @dataclass
@@ -124,9 +125,11 @@ async def gather_sources(ticker: str, emit: Emit) -> dict[str, Source]:
     async def run(src: Source) -> None:
         started = time.perf_counter()
         try:
-            src.value = await src.fetch()
+            src.value = await asyncio.wait_for(src.fetch(), SOURCE_TIMEOUT)
             src.status = "ok" if src.value not in (None, [], {}) else "empty"
         except Exception as exc:
+            if isinstance(exc, TimeoutError):
+                exc = UpstreamError(f"{src.label} timed out after {SOURCE_TIMEOUT}s", source=src.label)
             err = as_app_error(exc, src.label)
             src.status = _failure_status(err)
             src.detail = err.message[:300]
@@ -323,7 +326,11 @@ async def run_analysis(ticker: str, emit: Emit | None = None, refresh: bool = Fa
         f"Today is {today}. Write the research report for {ticker} "
         f"({profile.value.get('companyName')}).\n\n<evidence>\n{book.render()}\n</evidence>"
     )
-    report, usage = await llm.structured(SYSTEM_PROMPT, prompt, AnalysisReport)
+
+    async def llm_progress(update: dict) -> None:
+        await emit({"type": "llm", **update})
+
+    report, usage = await llm.structured(SYSTEM_PROMPT, prompt, AnalysisReport, on_progress=llm_progress)
     citations = _validate_citations(report, book.ids())
 
     analysts = s["analysts"].value if s["analysts"].status == "ok" else {}
