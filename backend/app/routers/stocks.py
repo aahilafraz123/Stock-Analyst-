@@ -1,45 +1,54 @@
-from fastapi import APIRouter, HTTPException
-from app.services.fmp_service import (
-    get_company_profile,
-    get_financial_ratios,
-    get_income_statement,
-    get_competitor_ratios,
-    get_price_history,
-)
+from fastapi import APIRouter, Depends, Query
+from fastapi.concurrency import run_in_threadpool
+
+from app.deps import ticker_param
+from app.errors import NotFoundError
+from app.services import market_data
 
 router = APIRouter()
 
+
 @router.get("/{ticker}/profile")
-def company_profile(ticker: str):
-    data = get_company_profile(ticker.upper())
-    if not data:
-        raise HTTPException(status_code=404, detail=f"Ticker {ticker} not found")
-    return data
+async def company_profile(ticker: str = Depends(ticker_param)):
+    return await run_in_threadpool(market_data.get_company_profile, ticker)
+
 
 @router.get("/{ticker}/ratios")
-def financial_ratios(ticker: str):
-    data = get_financial_ratios(ticker.upper())
-    if not data:
-        raise HTTPException(status_code=404, detail=f"No ratios found for {ticker}")
-    return data
+async def financial_ratios(ticker: str = Depends(ticker_param)):
+    return await run_in_threadpool(market_data.get_financial_ratios, ticker)
+
 
 @router.get("/{ticker}/income")
-def income_statement(ticker: str):
-    data = get_income_statement(ticker.upper())
+async def income_statement(ticker: str = Depends(ticker_param)):
+    data = await run_in_threadpool(market_data.get_income_statement, ticker)
     if not data:
-        raise HTTPException(status_code=404, detail=f"No income data found for {ticker}")
+        raise NotFoundError(f"No income statement data for {ticker}")
     return data
+
 
 @router.get("/{ticker}/competitors")
-def competitor_comparison(ticker: str):
-    data = get_competitor_ratios(ticker.upper())
-    if not data:
-        raise HTTPException(status_code=404, detail=f"No competitor data found for {ticker}")
-    return data
+async def competitor_comparison(ticker: str = Depends(ticker_param)):
+    return await run_in_threadpool(market_data.get_competitor_ratios, ticker)
+
 
 @router.get("/{ticker}/history")
-def price_history(ticker: str, period: str = "1Y"):
-    data = get_price_history(ticker.upper(), period)
-    if data is None:
-        raise HTTPException(status_code=404, detail=f"No history found for {ticker}")
-    return data
+async def price_history(
+    ticker: str = Depends(ticker_param),
+    period: str = Query("1Y", pattern="^(1W|1M|3M|6M|1Y|2Y|5Y)$"),
+):
+    return await run_in_threadpool(market_data.get_price_history, ticker, period)
+
+
+@router.get("/{ticker}/snapshot")
+async def snapshot(ticker: str = Depends(ticker_param)):
+    """Profile + ratios + analyst consensus in one round trip (they share one upstream fetch)."""
+
+    def build():
+        return {
+            "profile": market_data.get_company_profile(ticker),
+            "ratios": market_data.get_financial_ratios(ticker),
+            "analysts": market_data.get_analyst_consensus(ticker),
+            "price": market_data.get_price_context(ticker),
+        }
+
+    return await run_in_threadpool(build)

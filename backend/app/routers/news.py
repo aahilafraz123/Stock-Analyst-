@@ -1,33 +1,29 @@
-from fastapi import APIRouter, HTTPException
-from app.services.news_service import (
-    get_company_news,
-    get_market_news,
-    get_company_sentiment
-)
+from fastapi import APIRouter, Depends, Query
+
+from app.deps import ticker_param
+from app.errors import InvalidInputError, NotFoundError
+from app.services import news
 
 router = APIRouter()
 
-@router.get("/{ticker}")
-async def company_news(ticker: str, days_back: int = 7):
-    data = await get_company_news(ticker.upper(), days_back)
-    if not data:
-        raise HTTPException(status_code=404, detail=f"No news found for {ticker}")
-    return data
+MARKET_CATEGORIES = ("general", "forex", "crypto", "merger")
 
-@router.get("/{ticker}/sentiment")
-async def company_sentiment(ticker: str):
-    data = await get_company_sentiment(ticker.upper())
-    if not data:
-        raise HTTPException(status_code=404, detail=f"No sentiment data found for {ticker}")
-    return data
 
 @router.get("/market/{category}")
 async def market_news(category: str = "general"):
-    valid = ["general", "forex", "crypto", "merger"]
-    if category not in valid:
-        raise HTTPException(status_code=400, detail=f"Category must be one of {valid}")
-    data = await get_market_news(category)
+    if category not in MARKET_CATEGORIES:
+        raise InvalidInputError(f"Category must be one of {list(MARKET_CATEGORIES)}")
+    return await news.get_market_news(category)
+
+
+@router.get("/{ticker}")
+async def company_news(ticker: str = Depends(ticker_param), days_back: int = Query(7, ge=1, le=30)):
+    return await news.get_company_news(ticker, days_back=days_back, limit=10, with_bodies=False)
+
+
+@router.get("/{ticker}/sentiment")
+async def company_sentiment(ticker: str = Depends(ticker_param)):
+    data = await news.get_company_sentiment(ticker)
     if not data:
-        raise HTTPException(status_code=404, detail="No market news found")
+        raise NotFoundError(f"No sentiment data for {ticker} (Finnhub premium endpoint)")
     return data
-    
