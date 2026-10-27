@@ -1,6 +1,7 @@
 """Turn SEC filings and earnings call transcripts into indexed, embedded chunks."""
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
 
 from app.rag import store
 from app.rag.chunking import chunk_text
@@ -73,21 +74,30 @@ def ingest_transcript(t: dict) -> str:
     return doc_id
 
 
-def index_ticker(ticker: str, n_10k: int = 2, n_10q: int = 3, n_transcripts: int = 4) -> dict:
-    """Index a ticker's recent filings and calls. Already-indexed documents are skipped."""
-    ticker = ticker.upper()
-    results: list[dict] = []
-    for form, count in (("10-K", n_10k), ("10-Q", n_10q)):
-        for i in range(count):
-            try:
-                filing = edgar.get_filing(ticker, form, index=i)
-                results.append({"docId": ingest_filing(filing), "status": "ok"})
-            except Exception as exc:
-                results.append({"docId": f"{ticker}:{form}#{i}", "status": "error", "detail": str(exc)})
-                break
+def _index_filing(ticker: str, form: str, index: int) -> dict:
     try:
-        for t in transcripts.get_transcripts(ticker, limit=n_transcripts):
-            results.append({"docId": ingest_transcript(t), "status": "ok"})
+        return {"docId": ingest_filing(edgar.get_filing(ticker, form, index=index)), "status": "ok"}
     except Exception as exc:
-        results.append({"docId": f"{ticker}:calls", "status": "error", "detail": str(exc)})
+        return {"docId": f"{ticker}:{form}#{index}", "status": "error", "detail": str(exc)}
+
+
+def _index_transcripts(ticker: str, limit: int) -> list[dict]:
+    try:
+        return [{"docId": ingest_transcript(t), "status": "ok"} for t in transcripts.get_transcripts(ticker, limit)]
+    except Exception as exc:
+        return [{"docId": f"{ticker}:calls", "status": "error", "detail": str(exc)}]
+
+
+def index_ticker(ticker: str, n_10k: int = 2, n_10q: int = 3, n_transcripts: int = 4) -> dict:
+    """Index a ticker's recent filings and calls concurrently. Already-indexed documents are skipped.
+
+    SEC requests stay under the shared rate limit in app.net regardless of concurrency.
+    """
+    ticker = ticker.upper()
+    jobs = [("10-K", i) for i in range(n_10k)] + [("10-Q", i) for i in range(n_10q)]
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        calls = pool.submit(_index_transcripts, ticker, n_transcripts) if n_transcripts else None
+        results = list(pool.map(lambda job: _index_filing(ticker, *job), jobs))
+        if calls:
+            results.extend(calls.result())
     return {"ticker": ticker, "results": results, "documents": store.list_documents(ticker)}

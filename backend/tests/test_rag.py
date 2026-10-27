@@ -121,3 +121,21 @@ def test_hybrid_search_uses_dense_ranking(fixture_text, monkeypatch):
     hits = retriever.search("EXMP", "liquidity cash debt", k=3)
     assert hits[0].dense_rank is not None
     assert hits[0].section == "mda"
+
+
+def test_index_ticker_collects_successes_and_failures(fixture_text, monkeypatch):
+    from app.errors import NotFoundError
+    from app.rag import ingest
+
+    def get_filing(ticker, form, index=0):
+        if form == "10-Q" and index > 0:
+            raise NotFoundError("no older 10-Q")
+        return _filing(fixture_text, form, f"0000000000-26-{form[-1]}{index:05d}")
+
+    monkeypatch.setattr(ingest.edgar, "get_filing", get_filing)
+    monkeypatch.setattr(ingest.transcripts, "get_transcripts", lambda t, limit: [TRANSCRIPT])
+    out = ingest.index_ticker("exmp", n_10k=2, n_10q=2, n_transcripts=1)
+    statuses = sorted(r["status"] for r in out["results"])
+    assert statuses == ["error", "ok", "ok", "ok", "ok"]
+    assert len(out["documents"]) == 4
+    assert {d["kind"] for d in out["documents"]} == {"filing", "transcript"}
