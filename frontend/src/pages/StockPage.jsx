@@ -1,210 +1,133 @@
-import { useEffect, useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
-import { getProfile, getRatios, getCompetitors, getAnalysis } from '../services/api'
-import OverviewCard from '../components/OverviewCard'
-import RatiosPanel from '../components/RatiosPanel'
-import PriceChart from '../components/PriceChart'
+import { useState } from 'react'
+import { Link, useParams } from 'react-router-dom'
+import { getCompetitors, getErrorDetail, getReportById, getSnapshot } from '../services/api'
+import { useAnalysisStream } from '../hooks/useAnalysisStream'
+import { useRequest } from '../hooks/useRequest'
+import AnalysisPanel from '../components/AnalysisPanel'
+import AskFilings from '../components/AskFilings'
 import CompetitorTable from '../components/CompetitorTable'
-import AnalysisReport from '../components/AnalysisReport'
+import ErrorNotice from '../components/ErrorNotice'
 import Loader from '../components/Loader'
+import OverviewCard from '../components/OverviewCard'
+import PriceChart from '../components/PriceChart'
+import RatiosPanel from '../components/RatiosPanel'
+import ReportHistory from '../components/ReportHistory'
+import RiskDiff from '../components/RiskDiff'
+
 export default function StockPage() {
-  const { ticker } = useParams()
-  const navigate = useNavigate()
-  const [profile, setProfile] = useState(null)
-  const [ratios, setRatios] = useState(null)
-  const [competitors, setCompetitors] = useState(null)
-  const [analysis, setAnalysis] = useState(null)
-  const [loadingBase, setLoadingBase] = useState(true)
-  const [loadingAnalysis, setLoadingAnalysis] = useState(true)
-  const [error, setError] = useState(null)
+  const { ticker = '' } = useParams()
+  const symbol = ticker.trim().toUpperCase()
+  // Remount per ticker: every request, the analysis stream and all panel state
+  // start fresh, so nothing (an error, a stale report) carries over.
+  return <StockView key={symbol} ticker={symbol} />
+}
 
-  useEffect(() => {
-    setLoadingBase(true)
-    setLoadingAnalysis(true)
-    setProfile(null)
-    setRatios(null)
-    setCompetitors(null)
-    setAnalysis(null)
+function StockView({ ticker }) {
+  // Market data, peers and the AI analysis load independently: one failing
+  // never hides the others.
+  const snapshot = useRequest(ticker, (signal) => getSnapshot(ticker, { signal }))
+  const competitors = useRequest(ticker, (signal) => getCompetitors(ticker, { signal }))
+  const [stream, restartAnalysis] = useAnalysisStream(ticker)
 
-    // Stage 1 — load fast data first (profile, ratios, competitors)
-    Promise.all([
-      getProfile(ticker),
-      getRatios(ticker),
-      getCompetitors(ticker),
-    ]).then(([p, r, c]) => {
-      setProfile(p.data)
-      setRatios(r.data)
-      setCompetitors(c.data)
-      setLoadingBase(false)
-    }).catch(() => {
-      setError('Failed to load data for ' + ticker)
-      setLoadingBase(false)
-      setLoadingAnalysis(false)
-    })
-
-    // Stage 2 — load AI analysis independently (takes longer)
-    getAnalysis(ticker)
-      .then(a => {
-        setAnalysis(a.data)
-        setLoadingAnalysis(false)
-      })
-      .catch(() => {
-        setLoadingAnalysis(false)
-      })
-
-  }, [ticker])
-
-  if (loadingBase) return <Loader ticker={ticker} />
-
-  if (error) return (
-    <div style={styles.errorPage}>
-      <div style={styles.errorBox}>
-        <div style={styles.errorCode}>ERROR</div>
-        <div style={styles.errorMsg}>{error}</div>
-        <button style={styles.backBtn} onClick={() => navigate('/')}>← BACK TO SEARCH</button>
-      </div>
-    </div>
+  const [archivedId, setArchivedId] = useState(null)
+  const liveReportId = stream.response?.meta?.reportId ?? null
+  const showArchived = archivedId != null && archivedId !== liveReportId
+  const archived = useRequest(showArchived ? `report:${archivedId}` : null, (signal) =>
+    getReportById(archivedId, { signal }),
   )
 
+  const profile = snapshot.data?.profile
+  const restart = (options) => {
+    setArchivedId(null)
+    restartAnalysis(options)
+  }
+
   return (
-    <div style={styles.page}>
-      <header style={styles.header}>
-        <button style={styles.backBtn} onClick={() => navigate('/')}>← TERMINAL</button>
-        <div style={styles.headerTicker}>{ticker}</div>
-        <div style={styles.headerName}>{profile?.companyName}</div>
+    <div className="page">
+      <header className="topbar">
+        <Link to="/" className="btn">
+          ← TERMINAL
+        </Link>
+        <h1 className="topbar__ticker">{ticker}</h1>
+        <span className="topbar__name">{profile?.companyName}</span>
+        <span className="topbar__spacer" />
+        <Link to="/track-record" className="btn">
+          TRACK RECORD →
+        </Link>
       </header>
 
-      <div style={styles.grid}>
-        <div style={styles.colLeft}>
-          <OverviewCard profile={profile} ratios={ratios} />
-          <PriceChart ticker={ticker} currentPrice={profile?.currentPrice} />
-          <RatiosPanel ratios={ratios} />
-        </div>
-        <div style={styles.colRight}>
-          {loadingAnalysis ? (
-            <div style={styles.analysisLoading}>
-              <div style={styles.analysisSpinner} />
-              <div style={styles.analysisLoadingText}>RUNNING AI ANALYSIS...</div>
-              <div style={styles.analysisLoadingSub}>Parsing 10-Q · Scanning news · Generating report</div>
-            </div>
-          ) : (
-            <AnalysisReport analysis={analysis} />
+      {/* Slot order: desktop keeps two columns; under 960px the columns dissolve and
+          the slots line up as overview, chart, analysis, Q&A, risk diff, history, peers, ratios. */}
+      <main className="stock-grid">
+        <div className="stock-col">
+          <Slot order={1}>
+            {snapshot.loading && <Loader label="LOADING MARKET DATA" sub="Profile · Ratios · Analysts · Price" />}
+            {snapshot.error && (
+              <div className="panel">
+                <ErrorNotice
+                  title={`MARKET DATA UNAVAILABLE FOR ${ticker}`}
+                  detail={getErrorDetail(snapshot.error)}
+                  onRetry={snapshot.reload}
+                />
+              </div>
+            )}
+            {snapshot.data && <OverviewCard profile={profile} price={snapshot.data.price} />}
+          </Slot>
+          {snapshot.data && (
+            <Slot order={2}>
+              <PriceChart ticker={ticker} currentPrice={profile?.currentPrice} />
+            </Slot>
           )}
-          <CompetitorTable competitors={competitors} ticker={ticker} />
+          <Slot order={6}>
+            <ReportHistory
+              ticker={ticker}
+              refreshKey={liveReportId}
+              activeId={showArchived ? archivedId : liveReportId}
+              onSelect={setArchivedId}
+            />
+          </Slot>
+          {snapshot.data && (
+            <Slot order={8}>
+              <RatiosPanel ratios={snapshot.data.ratios} />
+            </Slot>
+          )}
         </div>
-      </div>
+
+        <div className="stock-col">
+          <Slot order={3}>
+            <AnalysisPanel
+              ticker={ticker}
+              stream={stream}
+              onRestart={restart}
+              archived={showArchived ? { id: archivedId, ...archived } : null}
+              onCloseArchived={() => setArchivedId(null)}
+            />
+          </Slot>
+          <Slot order={4}>
+            <AskFilings ticker={ticker} />
+          </Slot>
+          <Slot order={5}>
+            <RiskDiff ticker={ticker} />
+          </Slot>
+          <Slot order={7}>
+            <CompetitorTable
+              ticker={ticker}
+              competitors={competitors.data}
+              loading={competitors.loading}
+              error={competitors.error}
+              onRetry={competitors.reload}
+            />
+          </Slot>
+        </div>
+      </main>
     </div>
   )
 }
 
-const styles = {
-  page: {
-    minHeight: '100vh',
-    background: 'var(--bg-primary)',
-    paddingBottom: '60px',
-  },
-  header: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '24px',
-    padding: '20px 40px',
-    borderBottom: '1px solid var(--border)',
-    background: 'var(--bg-secondary)',
-  },
-  backBtn: {
-    background: 'transparent',
-    border: '1px solid var(--border-bright)',
-    color: 'var(--text-secondary)',
-    padding: '8px 16px',
-    fontFamily: 'var(--font-mono)',
-    fontSize: '11px',
-    letterSpacing: '2px',
-    cursor: 'pointer',
-  },
-  headerTicker: {
-    fontFamily: 'var(--font-mono)',
-    fontSize: '24px',
-    fontWeight: 700,
-    color: 'var(--accent-green)',
-    letterSpacing: '3px',
-  },
-  headerName: {
-    fontFamily: 'var(--font-sans)',
-    fontSize: '14px',
-    color: 'var(--text-secondary)',
-  },
-  grid: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1.4fr',
-    gap: '1px',
-    background: 'var(--border)',
-    margin: '40px',
-    border: '1px solid var(--border)',
-  },
-  colLeft: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '1px',
-    background: 'var(--border)',
-  },
-  colRight: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '1px',
-    background: 'var(--border)',
-  },
-  analysisLoading: {
-    background: 'var(--bg-card)',
-    padding: '60px 28px',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '16px',
-    minHeight: '300px',
-  },
-  analysisSpinner: {
-    width: '32px',
-    height: '32px',
-    border: '2px solid var(--border-bright)',
-    borderTop: '2px solid var(--accent-green)',
-    borderRadius: '50%',
-    animation: 'spin 0.8s linear infinite',
-  },
-  analysisLoadingText: {
-    fontFamily: 'var(--font-mono)',
-    fontSize: '12px',
-    color: 'var(--accent-green)',
-    letterSpacing: '4px',
-  },
-  analysisLoadingSub: {
-    fontFamily: 'var(--font-mono)',
-    fontSize: '10px',
-    color: 'var(--text-muted)',
-    letterSpacing: '1px',
-  },
-  errorPage: {
-    minHeight: '100vh',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    background: 'var(--bg-primary)',
-  },
-  errorBox: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '16px',
-  },
-  errorCode: {
-    fontFamily: 'var(--font-mono)',
-    fontSize: '12px',
-    color: 'var(--accent-red)',
-    letterSpacing: '4px',
-  },
-  errorMsg: {
-    fontFamily: 'var(--font-sans)',
-    fontSize: '18px',
-    color: 'var(--text-secondary)',
-  },
+function Slot({ order, children }) {
+  return (
+    <div className="stock-slot" style={{ order }}>
+      {children}
+    </div>
+  )
 }

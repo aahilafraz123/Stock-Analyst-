@@ -2,271 +2,240 @@
 
 # 📈 StockAnalyzer
 
-### AI-Powered Equity Research Terminal
+### AI equity research terminal with retrieval over SEC filings and cited, verifiable reports
 
-**Type a ticker. Get an institutional-grade investment report in seconds.**
+**Type a ticker. Watch 13 data sources stream in. Get an institutional-style report where every claim links back to the filing, call transcript or article it came from.**
 
-StockAnalyzer fans out across **10 live financial data sources** — SEC filings, earnings call transcripts, insider trades, institutional ownership, analyst consensus, real-time news, and price momentum — assembles them into a single rich context, and hands it to **Claude** to produce a structured, opinionated equity research report.
-
-<br/>
-
-![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.135-009688?style=for-the-badge&logo=fastapi&logoColor=white)
-![React](https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react&logoColor=black)
-![Vite](https://img.shields.io/badge/Vite-7-646CFF?style=for-the-badge&logo=vite&logoColor=white)
-![Claude](https://img.shields.io/badge/Claude-Sonnet_4.6-D97757?style=for-the-badge&logo=anthropic&logoColor=white)
+[![CI](https://github.com/aahilafraz123/Stock-Analyst-/actions/workflows/ci.yml/badge.svg)](https://github.com/aahilafraz123/Stock-Analyst-/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.135-009688?logo=fastapi&logoColor=white)
+![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
+![Claude](https://img.shields.io/badge/Claude-Opus_5.5-D97757?logo=anthropic&logoColor=white)
+![SQLite FTS5](https://img.shields.io/badge/Retrieval-BM25_+_dense_(RRF)-6E56CF)
 
 </div>
 
 ---
 
-## 🎯 What it does
+## What it does
 
-Most stock screeners show you numbers. StockAnalyzer reads the homework a human analyst would read — the **10-Q**, the **10-K risk factors**, the **earnings call transcript**, what **insiders** and **institutions** are doing, what **Wall Street** thinks, and the **last two weeks of news** — and synthesizes it all into a single verdict:
+Most stock screeners show numbers. StockAnalyzer does the reading an analyst would do: the latest **10-K and 10-Q**, the **earnings call** (prepared remarks vs. analyst Q&A), **insider and institutional flows**, **Wall Street targets**, **peers** and **recent news**. It then has Claude write a structured report in which **every claim carries citations** to that evidence.
 
-> **Signal · Recommendation · Confidence · Valuation · Strengths · Risks · Competitive Position**
+| | |
+|---|---|
+| 🛰️ **Live pipeline** | 13 sources fetched concurrently, streamed to the UI over Server-Sent Events as each one lands |
+| 🔎 **RAG over filings** | 10-Ks, 10-Qs and transcripts are chunked and indexed (BM25 via SQLite FTS5, plus optional dense embeddings fused with reciprocal rank fusion) |
+| 🧾 **Cited reports** | Every evidence block has an ID (`F3`, `T1`, `N2`…). Claude must cite IDs per claim; invented IDs are stripped and a **groundedness score** is reported |
+| 💬 **Ask the filings** | Free-form questions answered with Claude's **Citations API**: sentence-level citations that link to the exact SEC passage |
+| 🔁 **Risk-factor diff** | What changed in Risk Factors between the last two 10-Ks: added, removed, escalated, softened. Each quote is **verified verbatim** against the filing |
+| 📊 **Track record** | Every report is stored. A scorecard compares past BUY/HOLD/SELL calls with what the stock then did vs. SPY |
 
-The key idea: an LLM is only as good as its context. Instead of asking Claude "what do you think of AAPL?" from memory, the backend **does the research first** — pulling and parsing primary-source documents in parallel — then asks Claude to reason over real, current data.
-
----
-
-## ✨ Highlights
-
-- **🔀 10 data sources, fetched in parallel.** A single analysis request triggers 12 concurrent fetches via `asyncio.gather` + thread executors. Slow, blocking SEC/yfinance calls run alongside async HTTP news fetches — wall-clock time is the slowest single source, not the sum.
-- **📄 Real SEC filing parsing.** Downloads the latest **10-Q** and **10-K** straight from SEC EDGAR, prefers the PDF rendering (via `pdfplumber`), and falls back to HTML. A custom section extractor pulls **MD&A, Results of Operations, Liquidity, and Risk Factors** — using a longest-match heuristic to skip table-of-contents noise.
-- **🎙️ Earnings call transcripts.** Fetches the most recent call and **splits prepared remarks from the analyst Q&A** so Claude can weigh management's narrative against the hard questions.
-- **🏛️ Insider & institutional flow.** Surfaces recent insider buys/sells and the largest institutional holders — including who's **increasing vs. decreasing** their position.
-- **🧠 Structured AI output.** Claude is constrained to a strict JSON schema, so every report is consistent and directly renderable — no prose parsing.
-- **🖥️ Bloomberg-terminal aesthetic.** A dark, monospace, grid-lined React UI that loads fast fundamentals immediately and streams in the heavier AI report independently.
-- **🛡️ Fault-tolerant by design.** Any single source can fail (rate limit, missing filing, no transcript) and the analysis still completes — failures are caught per-source and passed to Claude as "Not available."
+> **Demo:** _add a GIF here (`docs/demo.gif`). Run the stack, analyze a ticker, and record the source panel filling in, the report with citation popovers, and an "Ask the filings" answer._
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
-```
-                          ┌─────────────────────────────────┐
-                          │   React + Vite Frontend (5173)   │
-                          │  Search → Terminal Dashboard     │
-                          └───────────────┬─────────────────┘
-                                          │  axios
-                          ┌───────────────▼─────────────────┐
-                          │      FastAPI Backend (8000)      │
-                          │   /stocks /news /filings /analysis │
-                          └───────────────┬─────────────────┘
-                                          │ asyncio.gather (12 parallel tasks)
-        ┌──────────────┬──────────────┬───┴────────┬──────────────┬──────────────┐
-        ▼              ▼              ▼            ▼              ▼              ▼
-   ┌─────────┐   ┌──────────┐   ┌─────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐
-   │ yfinance│   │SEC EDGAR │   │ Finnhub │  │earnings  │  │ insider  │  │ instit.  │
-   │ profile │   │10-Q/10-K │   │ news +  │  │ call     │  │ trades   │  │ holders  │
-   │ ratios  │   │ PDF/HTML │   │sentiment│  │transcript│  │(yfinance)│  │(yfinance)│
-   │ price   │   │ parser   │   │         │  │          │  │          │  │          │
-   │ analysts│   └──────────┘   └─────────┘  └──────────┘  └──────────┘  └──────────┘
-   │ peers   │
-   └─────────┘
-        │              │              │            │              │              │
-        └──────────────┴──────────────┴─────┬──────┴──────────────┴──────────────┘
-                                            ▼
-                              ┌──────────────────────────┐
-                              │   Context Assembler       │
-                              │  (ai_service.py)          │
-                              │  ~80k chars of evidence   │
-                              └────────────┬─────────────┘
-                                           ▼
-                              ┌──────────────────────────┐
-                              │   Claude (Sonnet 4.6)     │
-                              │   → strict JSON report    │
-                              └──────────────────────────┘
+```mermaid
+flowchart LR
+    UI["React + Vite<br/>terminal UI"] -- "SSE: /analysis/{t}/stream" --> API["FastAPI"]
+    UI -- "REST: snapshot, history, ask, risk-diff" --> API
+
+    subgraph Pipeline["research.run_analysis"]
+        direction TB
+        G["gather 13 sources<br/>(asyncio, per-source timeout)"] --> I["index filings + call<br/>(chunk → FTS5 + vectors)"]
+        I --> R["topic retrieval<br/>risks · growth · margins ·<br/>liquidity · guidance · competition"]
+        R --> E["evidence book<br/>[M1] [A1] [F1..n] [T1..n] [N1..n]"]
+        E --> C["Claude · structured output<br/>(strict JSON schema, streamed)"]
+        C --> V["validate citations<br/>→ groundedness"]
+    end
+
+    API --> Pipeline
+    G --> Y["Yahoo Finance<br/>quotes · ratios · holders"]
+    G --> S["SEC EDGAR<br/>10-K · 10-Q"]
+    G --> F["Finnhub<br/>news · peers"]
+    G --> T["earningscall<br/>transcripts"]
+    Pipeline <--> DB[("SQLite<br/>TTL cache · FTS5 index ·<br/>vectors · report history")]
 ```
 
-### The pipeline in one function
+**Request flow.** The stock page loads a one-call `/snapshot` (profile, ratios, price, analysts share a single cached upstream fetch), so the dashboard paints right away. In parallel it opens an `EventSource` to `/analysis/{t}/stream`, which emits:
 
-`ai_service.build_full_context()` is the heart of the system — it launches all 12 fetches at once and gracefully degrades on any failure:
-
-```python
-results = await asyncio.gather(
-    profile_task, ratios_task, competitors_task, price_task, analyst_task,
-    filing_10q_task, filing_10k_task, transcript_task, insider_task,
-    institutional_task, news_task, sentiment_task,
-    return_exceptions=True,   # one source failing never kills the analysis
-)
+```
+stage  sources    → source × 13 (pending → ok | empty | error | skipped, with timings)
+stage  indexing   → stage retrieval → stage llm → llm thinking → llm writing (chars…) → report
 ```
 
-The assembled evidence (capped per-source to fit Claude's context — 20k chars of 10-Q, 15k of 10-K, 10k of prepared remarks, etc.) is formatted into a single prompt, and Claude returns a structured report against a fixed schema.
+A report generated in the last 6 hours is served from history instantly; **Regenerate** forces a fresh run.
 
 ---
 
-## 📊 Data Sources
+## How the retrieval works
 
-| Source | Provider | What it contributes |
-|--------|----------|---------------------|
-| Company profile | yfinance | Sector, industry, market cap, business summary |
-| Financial ratios | yfinance | P/E, P/B, ROE, margins, debt/equity, EV/EBITDA, growth |
-| Price & momentum | yfinance | 52-week range position, 50/200-DMA, 1M/3M change |
-| Analyst consensus | yfinance | Mean/high/low price targets, implied upside, # of analysts |
-| Peer comparison | yfinance | Side-by-side ratios vs. curated sector competitors |
-| **10-Q filing** | SEC EDGAR | MD&A, Results of Operations, Liquidity, Risk Factors |
-| **10-K annual report** | SEC EDGAR | Business overview, full-year risk factors, annual MD&A |
-| **Earnings transcript** | earningscall | Prepared remarks + analyst Q&A, split apart |
-| **Insider trades** | yfinance | Recent buys/sells, 6-month net activity |
-| **Institutional ownership** | yfinance | Top holders, % held, increasing/decreasing positions |
-| Company news (14d) | Finnhub + newspaper3k | Full article bodies, not just headlines |
-| News sentiment | Finnhub | Buzz, bullish %, sector-relative scoring |
+The original version pasted the first 20k characters of the 10-Q into the prompt, which in practice was mostly the table of contents. The current pipeline:
 
----
+1. **Section extraction** (`services/edgar.py`). Filings are parsed by `Item N.` headings, with title checks such as "Risk Factors" or "Management's Discussion". Each heading spans to the next one and the longest span wins, so table-of-contents entries (a few characters long) lose to the real section. Part I/Part II collisions in 10-Qs (Item 2 = MD&A vs. Unregistered Sales) resolve the same way.
+2. **Chunking** (`rag/chunking.py`). Paragraph-aligned chunks of about 1.4k characters with about 200 characters of overlap. Transcripts arrive as one giant line, so they fall back to sentence boundaries. Each chunk is indexed with a contextual header (`AAPL 10-K (FY ended …) | Risk Factors`).
+3. **Hybrid search** (`rag/retriever.py`).
+   - **BM25** via SQLite FTS5 (porter stemming), always available.
+   - **Dense vectors** via Voyage `voyage-finance-2` or local `fastembed` when configured.
+   - The two are fused with **reciprocal rank fusion**. At this scale no vector database is needed: brute-force cosine in numpy over 3,000 chunks × 1,024 dimensions takes about 0.3 ms per query once the matrix is cached in memory (about 50 ms for the first load from SQLite).
+4. **Topic retrieval for reports.** Six queries (risks, growth, margins, liquidity, guidance, competition) pull about 18 de-duplicated passages from the *latest* 10-K, 10-Q and call. That gives targeted evidence instead of a truncated document.
+5. **Grounding checks.**
+   - Report citations are validated against the evidence IDs.
+   - Ask-the-filings uses Claude's native Citations API (`document` blocks with `citations.enabled`).
+   - Risk-diff quotes are fuzzy-matched (whitespace, case, ellipses) against the source filing and flagged `quoteVerified`.
 
-## 🧱 Tech Stack
-
-**Backend** — Python · FastAPI · Uvicorn · `asyncio` · Anthropic SDK · yfinance · BeautifulSoup + lxml · pdfplumber · newspaper3k · httpx
-
-**Frontend** — React 19 · Vite 7 · React Router 7 · Recharts · Axios · Space Mono / Syne typography
-
-**AI** — Claude Sonnet 4.6 (`claude-sonnet-4-6`) with strict JSON-schema output
-
----
-
-## 🚀 Getting Started
-
-### Prerequisites
-- Python 3.11+
-- Node.js 18+
-- An [Anthropic API key](https://console.anthropic.com/) and a free [Finnhub API key](https://finnhub.io/)
-
-### 1. Backend
+### Evaluation
 
 ```bash
 cd backend
-python -m venv venv
-source venv/bin/activate        # Windows: venv\Scripts\activate
-pip install -r requirements.txt
+python -m evals.retrieval_eval --fixtures          # offline synthetic corpus (CI gate: hit@5 ≥ 0.9)
+python -m evals.retrieval_eval AAPL MSFT --index   # real filings, generic section-labelled questions
+python -m evals.report_eval                        # groundedness / invalid-citation rate of stored reports
 ```
 
-Create `backend/.env`:
+Baseline on the synthetic corpus with **BM25 only**: `hit@1 0.80 · hit@5 1.00 · MRR 0.90`. Both rank-2 misses are paraphrases ("what happens if the platform is *hacked*" vs. "*cybersecurity incidents*"), which is the case dense embeddings exist for. Run with `EMBEDDINGS=local` or a `VOYAGE_API_KEY` to compare.
 
-```env
-ANTHROPIC_API_KEY=sk-ant-...
-FINNHUB_API_KEY=your_finnhub_key
-```
+---
 
-Run the API:
+## Getting started
+
+### Option A: Docker (one command)
 
 ```bash
+cp backend/.env.example backend/.env    # add ANTHROPIC_API_KEY and FINNHUB_API_KEY
+docker compose up --build
+```
+
+Then open http://localhost:5173. API docs are at http://localhost:8000/docs.
+
+### Option B: local dev
+
+```bash
+# backend
+cd backend
+python -m venv venv && source venv/bin/activate
+pip install -r requirements-dev.txt          # + requirements-embeddings.txt for local dense retrieval
+cp .env.example .env                         # add your keys
 uvicorn app.main:app --reload --port 8000
-```
 
-API docs are auto-generated at **http://localhost:8000/docs**.
-
-### 2. Frontend
-
-```bash
+# frontend (new terminal)
 cd frontend
 npm install
-npm run dev
+npm run dev                                  # http://localhost:5173
 ```
 
-Open **http://localhost:5173**, type a ticker (e.g. `AAPL`), and hit **Analyze**.
+### Configuration
+
+All settings are environment variables (see [`backend/.env.example`](backend/.env.example)):
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | — | **Required.** Report, Q&A and diff generation |
+| `FINNHUB_API_KEY` | — | **Required** for news and peers ([free key](https://finnhub.io/)) |
+| `SEC_USER_AGENT` | placeholder | SEC asks automated clients for a contact, e.g. `"StockAnalyzer you@example.com"` |
+| `ANTHROPIC_MODEL` | `claude-opus-5-5` | Any current Claude model ID |
+| `ANTHROPIC_EFFORT` | `medium` | `low` … `max`; trades depth for latency and cost |
+| `ANTHROPIC_FALLBACKS` | `default` | Server-side refusal fallbacks; empty disables |
+| `EARNINGSCALL_API_KEY` | demo | Without it only a handful of tickers have transcripts |
+| `EMBEDDINGS` | `auto` | `auto` / `voyage` / `local` / `none` (BM25 only) |
+| `VOYAGE_API_KEY` | — | Enables finance-tuned dense retrieval |
+| `CORS_ORIGINS` | localhost | Comma-separated allowed origins |
+| `REPORT_TTL_SECONDS` | `21600` | How long a stored report is served before regenerating |
+| `DATA_DIR` | `backend/.data` | SQLite cache, retrieval index and report history |
+| `VITE_API_URL` (frontend) | `http://localhost:8000` | Backend URL baked into the frontend build |
 
 ---
 
-## 🔌 API Reference
+## API
+
+Interactive docs at `/docs`. Errors are always JSON: `{"error": "upstream_error", "detail": "...", "source": "SEC EDGAR"}`, with 404 / 422 / 502 / 503 as appropriate.
 
 | Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/analysis/{ticker}` | **Full AI research report** (runs the entire pipeline) |
-| `GET` | `/stocks/{ticker}/profile` | Company profile |
-| `GET` | `/stocks/{ticker}/ratios` | Financial ratios |
-| `GET` | `/stocks/{ticker}/competitors` | Peer comparison table |
-| `GET` | `/stocks/{ticker}/history?period=1Y` | OHLCV price history |
-| `GET` | `/news/{ticker}?days_back=7` | Recent news with full article text |
-| `GET` | `/news/{ticker}/sentiment` | News sentiment scores |
-| `GET` | `/filings/{ticker}` | Recent 10-Q filing metadata |
-| `GET` | `/filings/{ticker}/text` | Parsed 10-Q key sections |
-
-<details>
-<summary><b>Example: AI analysis response shape</b></summary>
-
-```json
-{
-  "ticker": "AAPL",
-  "companyName": "Apple Inc.",
-  "overallSignal": "BULLISH",
-  "confidenceScore": 78,
-  "summary": "...",
-  "valuation": { "assessment": "FAIRLY VALUED", "reasoning": "..." },
-  "strengths": ["...", "...", "..."],
-  "risks": ["...", "...", "..."],
-  "competitivePosition": "...",
-  "recentNewsImpact": "...",
-  "financialHealth": { "assessment": "STRONG", "reasoning": "..." },
-  "priceContext": "...",
-  "analystConsensus": "...",
-  "recommendation": "BUY",
-  "recommendationReasoning": "..."
-}
-```
-</details>
+|---|---|---|
+| `GET` | `/analysis/{t}/stream` | **SSE**: live progress events, then the report |
+| `GET` | `/analysis/{t}?refresh=` | Same report as one blocking JSON response |
+| `GET` | `/stocks/{t}/snapshot` | Profile + ratios + analysts + price context in one call |
+| `GET` | `/stocks/{t}/competitors` | Peer comparison (Finnhub peers, fetched concurrently) |
+| `GET` | `/stocks/{t}/history?period=1Y` | OHLCV (1W … 5Y) |
+| `POST` | `/rag/{t}/index` | Index recent 10-Ks, 10-Qs and calls (idempotent) |
+| `GET` | `/rag/{t}/search?q=` | Raw hybrid search hits with lexical/dense ranks |
+| `POST` | `/rag/{t}/ask` | Question → answer with sentence-level citations |
+| `GET` | `/rag/{t}/risk-diff` | YoY Risk Factors diff with verified quotes |
+| `GET` | `/reports/{t}` · `/reports/id/{id}` | Report history |
+| `GET` | `/reports/track-record` | Hit rate and excess return vs. SPY |
+| `GET` | `/filings/{t}` · `/filings/{t}/text` | Filing list and extracted sections |
+| `GET` | `/news/{t}` · `/health` | News headlines · configuration status |
 
 ---
 
-## 📁 Project Structure
+## Engineering notes
 
-```
-Stock-Analyst-/
-├── backend/
-│   ├── app/
-│   │   ├── main.py                 # FastAPI app + CORS + routers
-│   │   ├── routers/                # stocks, news, filings, analysis
-│   │   └── services/
-│   │       ├── ai_service.py       # ⭐ parallel fetch + Claude orchestration
-│   │       ├── fmp_service.py      # yfinance: profile, ratios, price, analysts, peers
-│   │       ├── edgar_service.py    # SEC 10-Q/10-K download + section parser
-│   │       ├── news_service.py     # Finnhub news + full-text + sentiment
-│   │       ├── transcript_service.py   # earnings call transcripts
-│   │       ├── insider_service.py      # insider trades
-│   │       └── institutional_service.py # institutional holders
-│   └── requirements.txt
-└── frontend/
-    └── src/
-        ├── pages/        # SearchPage, StockPage
-        ├── components/   # OverviewCard, RatiosPanel, PriceChart,
-        │                 # CompetitorTable, AnalysisReport, Loader
-        └── services/api.js
+- **Caching.** A two-level TTL cache (in-process LRU + SQLite) wraps every fetcher. Concurrent callers for the same key share one request (single-flight), failures are briefly remembered so an outage costs one request, not four, and filed SEC documents are cached for 30 days because they never change. One analysis went from ~16 Yahoo `.info` calls and 3 downloads of SEC's ticker map to one of each.
+- **Structured output.** Reports use `output_config.format` with a strict JSON schema generated from Pydantic models (refs inlined, `additionalProperties: false`), so parsing can't fail on prose or code fences. Field descriptions double as instructions. The call is streamed (long inputs, live progress), and `refusal` / `max_tokens` stop reasons raise typed errors.
+- **Failure isolation.** Each source has its own timeout and reports `ok | empty | error | skipped`. A missing key disables one source, not the report. The prompt and the UI both say which evidence was unavailable.
+- **Errors that make sense in a browser.** Exceptions become JSON *inside* the CORS middleware. Previously an upstream failure surfaced in devtools as a misleading CORS error.
+- **Zero infrastructure.** Everything persistent is one SQLite file in WAL mode. Schema setup is serialized because concurrent first connections racing on `PRAGMA journal_mode=WAL` was a real bug the test suite caught.
+
+### Tests & CI
+
+```bash
+cd backend && pytest --cov=app      # 59 tests, fully offline (synthetic filings, fake Claude client)
+cd frontend && npm test && npm run lint && npm run build   # 36 tests (vitest + Testing Library)
 ```
 
----
+GitHub Actions runs ruff (lint and format), pytest, the retrieval-eval gate, frontend lint/test/build, and a `docker compose build`.
 
-## 🧭 How a request flows
+### Deploying
 
-1. **User** searches a ticker → `StockPage` fires two parallel loads.
-2. **Fast lane** (`/stocks/...`) returns profile, ratios, and peers immediately so the dashboard paints instantly.
-3. **Slow lane** (`/analysis/...`) runs the full 12-source pipeline — SEC downloads, transcript fetch, news scraping — while a "Running AI Analysis" state shows.
-4. **Claude** receives ~80k characters of fresh, structured evidence and returns the JSON verdict.
-5. The **AnalysisReport** component renders signal, recommendation, confidence, valuation, strengths, and risks — color-coded BULLISH/BEARISH/NEUTRAL.
+[`render.yaml`](render.yaml) is a Render Blueprint: a Docker web service for the API (with an optional persistent disk for `/data`) and a static site for the frontend. After the first deploy, set the frontend's `VITE_API_URL` and the backend's `CORS_ORIGINS` to each other's URLs.
 
 ---
 
-## 🗺️ Roadmap
+## Project structure
 
-- [ ] Streaming AI responses (token-by-token) instead of wait-then-render
-- [ ] Response caching / persistence layer to avoid re-fetching within a session
-- [ ] Watchlists and multi-ticker comparison view
-- [ ] Dynamic peer discovery (replace the hardcoded peer map)
-- [ ] Backtesting recommendations against subsequent price action
-- [ ] Dockerized one-command deploy
+```
+backend/
+  app/
+    main.py              app, error middleware, CORS, routers
+    config.py            env-driven settings
+    cache.py  db.py      TTL cache with single-flight · shared SQLite
+    llm.py               Claude: strict-schema structured output (streamed), cited answers
+    schemas.py           report / diff models (also the JSON schema sent to Claude)
+    routers/             stocks · news · filings · analysis (SSE) · rag · reports
+    services/
+      research.py        ⭐ pipeline: sources → index → retrieve → Claude → validate
+      edgar.py           SEC filing discovery + Item-heading section extraction
+      market_data.py     yfinance quotes, ratios, history, analysts, peers
+      news.py  transcripts.py  insider.py  institutional.py  peers.py  history.py
+    rag/
+      chunking.py  store.py (FTS5 + vectors)  embeddings.py  retriever.py (RRF)
+      ingest.py  qa.py (Citations API)  diff.py (risk-factor diff + quote check)
+  evals/                 retrieval_eval.py · report_eval.py · questions.json
+  tests/                 pytest suite + synthetic 10-K / 10-Q fixtures
+frontend/
+  src/pages/             SearchPage · StockPage · TrackRecordPage (lazy-loaded routes)
+  src/components/        AnalysisPanel · SourceProgress · AnalysisReport · CitationChip · AskFilings ·
+                         RiskDiff · ReportHistory · PriceChart · CompetitorTable · …
+  src/hooks/             useAnalysisStream (EventSource lifecycle) · useRequest (keyed, abortable fetches)
+  src/state/             analysisStream reducer (pure, unit-tested)
+```
 
 ---
+
+## Limitations & roadmap
+
+- Yahoo Finance data comes from an unofficial API and can rate-limit. Caching softens this but doesn't remove it.
+- Section labels in the retrieval eval are a coarse relevance proxy. Hand-labelled passages would give a sharper signal.
+- The track record needs time (and reports) to mean anything. It's a sanity check, not a backtest.
+- Next: XBRL financial statements from SEC's `companyfacts` API, multi-ticker comparison, watchlists with scheduled re-analysis, and a reranker over the fused candidates.
 
 ## ⚠️ Disclaimer
 
-StockAnalyzer is a **research and educational tool**. Its output is AI-generated and may contain errors or omissions. **Nothing here is financial advice.** Always do your own due diligence and consult a licensed professional before making investment decisions.
-
----
+StockAnalyzer is a **research and educational tool**. Its output is AI-generated and may contain errors or omissions. **Nothing here is financial advice.** Do your own due diligence and consult a licensed professional before making investment decisions.
 
 <div align="center">
 
-**Built with FastAPI, React, and Claude.**
-
-*Reads the filings so you don't have to.*
+**Built with FastAPI, React and Claude.** *Reads the filings so you don't have to, and shows its work.*
 
 </div>

@@ -1,15 +1,30 @@
-const fmt = (n, d = 1) => n != null ? Number(n).toFixed(d) : '—'
-const pct = (n) => n != null ? `${(n * 100).toFixed(1)}%` : '—'
-const fmtB = (n) => n != null ? `$${(n / 1e9).toFixed(0)}B` : '—'
+import { Link } from 'react-router-dom'
+import { formatFraction as pct, formatMoneyCompact as fmtB, formatNumber } from '../utils/format'
+import { getErrorDetail } from '../services/api'
+import ErrorNotice from './ErrorNotice'
 
-export default function CompetitorTable({ competitors, ticker }) {
+const fmt = (n) => formatNumber(n, 1)
+
+export default function CompetitorTable({ competitors, ticker, loading, error, onRetry }) {
+  if (loading || error) {
+    return (
+      <section className="panel" aria-label="Competitor comparison">
+        <div className="panel-title">COMPETITOR COMPARISON</div>
+        {loading ? (
+          <p style={styles.muted}>Loading peer metrics…</p>
+        ) : (
+          <ErrorNotice title="PEERS UNAVAILABLE" detail={getErrorDetail(error)} onRetry={onRetry} compact />
+        )}
+      </section>
+    )
+  }
   if (!competitors) return null
   const entries = Object.entries(competitors)
 
   return (
-    <div style={styles.card}>
-      <div style={styles.cardHeader}>COMPETITOR COMPARISON</div>
-      <div style={styles.tableWrap}>
+    <section className="panel" aria-label="Competitor comparison">
+      <div className="panel-title">COMPETITOR COMPARISON</div>
+      <div className="table-wrap">
         <table style={styles.table}>
           <thead>
             <tr>
@@ -21,7 +36,9 @@ export default function CompetitorTable({ competitors, ticker }) {
           <tbody>
             {entries.map(([t, d]) => (
               <tr key={t} style={t === ticker ? styles.activeRow : styles.row}>
-                <td style={{ ...styles.td, ...styles.tickerCell }}>{t}</td>
+                <td style={{ ...styles.td, ...styles.tickerCell }}>
+                  {t === ticker ? t : <Link to={`/stock/${t}`} title={d.name}>{t}</Link>}
+                </td>
                 <td style={styles.td}>{fmtB(d.marketCap)}</td>
                 <td style={styles.td}>{fmt(d.peRatio)}</td>
                 <td style={styles.td}>{fmt(d.pbRatio)}</td>
@@ -34,20 +51,12 @@ export default function CompetitorTable({ competitors, ticker }) {
           </tbody>
         </table>
       </div>
-    </div>
+    </section>
   )
 }
 
 const styles = {
-  card: { background: 'var(--bg-card)', padding: '28px' },
-  cardHeader: {
-    fontFamily: 'var(--font-mono)',
-    fontSize: '10px',
-    letterSpacing: '4px',
-    color: 'var(--text-muted)',
-    marginBottom: '20px',
-  },
-  tableWrap: { overflowX: 'auto' },
+  muted: { fontSize: '12px', color: 'var(--text-muted)' },
   table: {
     width: '100%',
     borderCollapse: 'collapse',
@@ -60,6 +69,7 @@ const styles = {
     padding: '8px 12px',
     textAlign: 'left',
     borderBottom: '1px solid var(--border)',
+    whiteSpace: 'nowrap',
   },
   row: {
     borderBottom: '1px solid var(--border)',
@@ -72,6 +82,7 @@ const styles = {
     fontSize: '12px',
     color: 'var(--text-secondary)',
     padding: '10px 12px',
+    whiteSpace: 'nowrap',
   },
   tickerCell: {
     color: 'var(--accent-green)',

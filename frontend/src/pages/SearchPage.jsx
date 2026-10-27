@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 
 const POPULAR = ['AAPL', 'MSFT', 'NVDA', 'GOOGL', 'AMZN', 'TSLA', 'META', 'JPM']
 
@@ -9,84 +9,66 @@ export default function SearchPage() {
 
   const handleSearch = (t) => {
     const val = (t || ticker).toUpperCase().trim()
-    if (val) navigate(`/stock/${val}`)
+    if (val) navigate(`/stock/${encodeURIComponent(val)}`)
   }
 
   return (
-    <div style={styles.page}>
-      <div style={styles.grid} />
-      <div style={styles.center}>
+    <main className="search-page">
+      <div className="search-page__grid" aria-hidden="true" />
+      <div className="search-page__center">
         <div style={styles.badge}>EQUITY RESEARCH TERMINAL</div>
         <h1 style={styles.title}>STOCK<span style={styles.accent}>ANALYZER</span></h1>
-        <p style={styles.subtitle}>AI-powered fundamental analysis · Live financial data · SEC filings</p>
+        <p style={styles.subtitle}>
+          Cited AI research reports · Q&amp;A over SEC filings · Risk-factor diffs · A public track record
+        </p>
 
-        <div style={styles.searchBox}>
-          <span style={styles.searchIcon}>$</span>
+        <form
+          style={styles.searchBox}
+          onSubmit={(e) => {
+            e.preventDefault()
+            handleSearch()
+          }}
+        >
+          <span style={styles.searchIcon} aria-hidden="true">$</span>
           <input
             style={styles.input}
             placeholder="Enter ticker symbol..."
+            aria-label="Ticker symbol"
             value={ticker}
+            maxLength={12}
             onChange={e => setTicker(e.target.value.toUpperCase())}
-            onKeyDown={e => e.key === 'Enter' && handleSearch()}
             autoFocus
           />
-          <button style={styles.searchBtn} onClick={() => handleSearch()}>
+          <button type="submit" style={styles.searchBtn}>
             ANALYZE →
           </button>
-        </div>
+        </form>
 
         <div style={styles.popularRow}>
           <span style={styles.popularLabel}>POPULAR:</span>
           {POPULAR.map(t => (
-            <button key={t} style={styles.chip} onClick={() => handleSearch(t)}>
+            <button key={t} type="button" className="btn" style={styles.chip} onClick={() => handleSearch(t)}>
               {t}
             </button>
           ))}
         </div>
+
+        <Link to="/track-record" className="btn" style={styles.trackLink}>
+          VIEW THE TRACK RECORD →
+        </Link>
       </div>
 
-      <div style={styles.footer}>
-        <span style={styles.footerItem}>● LIVE DATA</span>
+      <div className="search-page__features">
+        <span style={styles.footerItem}>● LIVE MARKET DATA</span>
         <span style={styles.footerItem}>● SEC EDGAR</span>
-        <span style={styles.footerItem}>● AI ANALYSIS</span>
-        <span style={styles.footerItem}>● REAL-TIME NEWS</span>
+        <span style={styles.footerItem}>● RAG OVER FILINGS</span>
+        <span style={styles.footerItem}>● CITED AI ANALYSIS</span>
       </div>
-    </div>
+    </main>
   )
 }
 
 const styles = {
-  page: {
-    minHeight: '100vh',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    position: 'relative',
-    overflow: 'hidden',
-    background: 'var(--bg-primary)',
-  },
-  grid: {
-    position: 'absolute',
-    inset: 0,
-    backgroundImage: `
-      linear-gradient(var(--border) 1px, transparent 1px),
-      linear-gradient(90deg, var(--border) 1px, transparent 1px)
-    `,
-    backgroundSize: '60px 60px',
-    opacity: 0.4,
-    pointerEvents: 'none',
-  },
-  center: {
-    position: 'relative',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '24px',
-    padding: '40px',
-    maxWidth: '700px',
-    width: '100%',
-  },
   badge: {
     fontFamily: 'var(--font-mono)',
     fontSize: '11px',
@@ -98,7 +80,7 @@ const styles = {
   },
   title: {
     fontFamily: 'var(--font-sans)',
-    fontSize: 'clamp(48px, 8vw, 80px)',
+    fontSize: 'clamp(34px, 9vw, 80px)',
     fontWeight: 800,
     letterSpacing: '-2px',
     color: 'var(--text-primary)',
@@ -116,7 +98,7 @@ const styles = {
   },
   searchBox: {
     display: 'flex',
-    alignItems: 'center',
+    alignItems: 'stretch',
     width: '100%',
     border: '1px solid var(--border-bright)',
     background: 'var(--bg-card)',
@@ -124,6 +106,8 @@ const styles = {
     transition: 'border-color 0.2s',
   },
   searchIcon: {
+    display: 'flex',
+    alignItems: 'center',
     fontFamily: 'var(--font-mono)',
     fontSize: '20px',
     color: 'var(--accent-green)',
@@ -131,6 +115,7 @@ const styles = {
   },
   input: {
     flex: 1,
+    minWidth: 0,
     background: 'transparent',
     border: 'none',
     outline: 'none',
@@ -144,7 +129,7 @@ const styles = {
     background: 'var(--accent-green)',
     color: 'var(--bg-primary)',
     border: 'none',
-    padding: '18px 28px',
+    padding: '18px clamp(14px, 4vw, 28px)',
     fontFamily: 'var(--font-mono)',
     fontSize: '13px',
     fontWeight: 700,
@@ -165,21 +150,13 @@ const styles = {
     letterSpacing: '2px',
   },
   chip: {
-    background: 'transparent',
-    border: '1px solid var(--border-bright)',
-    color: 'var(--text-secondary)',
     padding: '6px 14px',
-    fontFamily: 'var(--font-mono)',
     fontSize: '12px',
-    cursor: 'pointer',
     letterSpacing: '1px',
-    transition: 'all 0.15s',
   },
-  footer: {
-    position: 'absolute',
-    bottom: '24px',
-    display: 'flex',
-    gap: '32px',
+  trackLink: {
+    color: 'var(--accent-green)',
+    borderColor: 'rgba(0, 255, 136, 0.4)',
   },
   footerItem: {
     fontFamily: 'var(--font-mono)',
