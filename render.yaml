@@ -1,0 +1,40 @@
+# Render Blueprint: New > Blueprint > pick this repo. Fill in the secret env vars when prompted,
+# then set VITE_API_URL on the frontend and CORS_ORIGINS on the backend to each other's URLs.
+services:
+  - type: web
+    name: stockanalyzer-api
+    runtime: docker
+    dockerContext: ./backend
+    dockerfilePath: ./backend/Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: FINNHUB_API_KEY
+        sync: false
+      - key: SEC_USER_AGENT
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: VOYAGE_API_KEY
+        sync: false
+    # A persistent disk keeps the cache, retrieval index and report history across deploys
+    # (requires a paid instance; without it everything still works, just colder after restarts).
+    disk:
+      name: analyzer-data
+      mountPath: /data
+      sizeGB: 1
+
+  - type: web
+    name: stockanalyzer-web
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_URL
+        sync: false
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html

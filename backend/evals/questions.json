@@ -1,0 +1,28 @@
+{
+  "_doc": "Section-level relevance labels. A question 'hits' when a retrieved chunk comes from an expected (form, section). Generic questions apply to any company; fixture questions target the synthetic corpus in tests/fixtures.",
+  "generic": [
+    {"q": "What are the biggest risks to the business?", "expect": [["10-K", "risk_factors"], ["10-Q", "risk_factors"]]},
+    {"q": "How exposed is the company to supply chain disruptions or supplier concentration?", "expect": [["10-K", "risk_factors"], ["10-Q", "risk_factors"]]},
+    {"q": "What regulatory or legal risks does the company face?", "expect": [["10-K", "risk_factors"], ["10-Q", "risk_factors"]]},
+    {"q": "How much cash does the company have and how does it fund buybacks and dividends?", "expect": [["10-K", "mda"], ["10-Q", "mda"]]},
+    {"q": "Why did revenue change compared with last year?", "expect": [["10-K", "mda"], ["10-Q", "mda"], ["EARNINGS_CALL", "prepared_remarks"]]},
+    {"q": "What drove the change in gross margin?", "expect": [["10-K", "mda"], ["10-Q", "mda"], ["EARNINGS_CALL", "prepared_remarks"], ["EARNINGS_CALL", "qa"]]},
+    {"q": "What is the exposure to foreign currency exchange rates and interest rates?", "expect": [["10-K", "market_risk"], ["10-Q", "market_risk"]]},
+    {"q": "What products does the company sell and who are its customers?", "expect": [["10-K", "business"]]},
+    {"q": "Who are the main competitors?", "expect": [["10-K", "business"], ["10-K", "risk_factors"]]},
+    {"q": "What guidance or outlook did management give?", "expect": [["EARNINGS_CALL", "prepared_remarks"], ["EARNINGS_CALL", "qa"], ["10-K", "mda"], ["10-Q", "mda"]]},
+    {"q": "What did analysts push back on during the earnings call?", "expect": [["EARNINGS_CALL", "qa"]]}
+  ],
+  "fixtures": [
+    {"q": "Which components come from a single supplier?", "expect": [["10-K", "risk_factors"]]},
+    {"q": "Could export controls hurt sales?", "expect": [["10-K", "risk_factors"]]},
+    {"q": "What happens if the monitoring platform is hacked?", "expect": [["10-K", "risk_factors"]]},
+    {"q": "How fast did software subscriptions grow last year?", "expect": [["10-K", "mda"], ["10-Q", "mda"]]},
+    {"q": "How much stock was repurchased?", "expect": [["10-K", "mda"], ["10-Q", "mda"]]},
+    {"q": "How sensitive is revenue to the euro and yen?", "expect": [["10-K", "market_risk"]]},
+    {"q": "What does the company make and how does it sell?", "expect": [["10-K", "business"]]},
+    {"q": "Are tariffs a new risk this quarter?", "expect": [["10-Q", "risk_factors"], ["EARNINGS_CALL", "qa"]]},
+    {"q": "Did management raise guidance?", "expect": [["EARNINGS_CALL", "prepared_remarks"]]},
+    {"q": "What revolving credit facility is available?", "expect": [["10-Q", "mda"]]}
+  ]
+}

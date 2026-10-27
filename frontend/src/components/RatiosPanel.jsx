@@ -1,5 +1,4 @@
-const fmt = (n, decimals = 2) => n != null ? Number(n).toFixed(decimals) : '—'
-const pct = (n) => n != null ? `${(n * 100).toFixed(1)}%` : '—'
+import { formatFraction as pct, formatNumber as fmt } from '../utils/format'
 
 export default function RatiosPanel({ ratios }) {
   if (!ratios) return null
@@ -22,9 +21,9 @@ export default function RatiosPanel({ ratios }) {
   ]
 
   return (
-    <div style={styles.card}>
-      <div style={styles.cardHeader}>FINANCIAL RATIOS</div>
-      <div style={styles.grid}>
+    <section className="panel" aria-label="Financial ratios">
+      <div className="panel-title">FINANCIAL RATIOS</div>
+      <div className="cell-grid" style={styles.grid}>
         {items.map(({ label, value }) => (
           <div key={label} style={styles.item}>
             <span style={styles.label}>{label}</span>
@@ -32,30 +31,20 @@ export default function RatiosPanel({ ratios }) {
           </div>
         ))}
       </div>
-    </div>
+    </section>
   )
 }
 
 const styles = {
-  card: { background: 'var(--bg-card)', padding: '28px' },
-  cardHeader: {
-    fontFamily: 'var(--font-mono)',
-    fontSize: '10px',
-    letterSpacing: '4px',
-    color: 'var(--text-muted)',
-    marginBottom: '20px',
-  },
   grid: {
     display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
-    gap: '1px',
-    background: 'var(--border)',
-    border: '1px solid var(--border)',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
   },
   item: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: '8px',
     padding: '10px 14px',
     background: 'var(--bg-card)',
   },

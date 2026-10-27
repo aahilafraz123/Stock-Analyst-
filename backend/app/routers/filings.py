@@ -1,18 +1,20 @@
-from fastapi import APIRouter, HTTPException
-from app.services.edgar_service import get_recent_10q_filings, get_10q_text
+from fastapi import APIRouter, Depends, Query
+from fastapi.concurrency import run_in_threadpool
+
+from app.deps import ticker_param
+from app.services import edgar
 
 router = APIRouter()
 
+FORM = Query("10-Q", pattern="^(10-K|10-Q)$")
+
+
 @router.get("/{ticker}")
-def recent_filings(ticker: str):
-    data = get_recent_10q_filings(ticker.upper())
-    if not data:
-        raise HTTPException(status_code=404, detail=f"No filings found for {ticker}")
-    return data
+async def recent_filings(ticker: str = Depends(ticker_param), form: str = FORM, limit: int = Query(4, ge=1, le=12)):
+    return await run_in_threadpool(edgar.list_filings, ticker, form, limit)
+
 
 @router.get("/{ticker}/text")
-def filing_text(ticker: str):
-    data = get_10q_text(ticker.upper())
-    if not data:
-        raise HTTPException(status_code=404, detail=f"Could not retrieve 10-Q for {ticker}")
-    return data
+async def filing_text(ticker: str = Depends(ticker_param), form: str = FORM, index: int = Query(0, ge=0, le=8)):
+    """Extracted sections (Business, Risk Factors, MD&A, Market Risk) of one filing."""
+    return await run_in_threadpool(edgar.get_filing, ticker, form, index)

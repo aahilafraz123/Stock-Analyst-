@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState } from 'react'
 import {
   ResponsiveContainer,
   AreaChart,
@@ -8,9 +8,12 @@ import {
   Tooltip,
   ReferenceLine,
 } from 'recharts'
-import { getHistory } from '../services/api'
+import { useRequest } from '../hooks/useRequest'
+import { getErrorDetail, getHistory } from '../services/api'
 
-const PERIODS = ['1W', '1M', '3M', '6M', '1Y', '2Y']
+const PERIODS = ['1W', '1M', '3M', '6M', '1Y', '2Y', '5Y']
+
+const EMPTY = []
 
 function formatDate(dateStr, period) {
   const d = new Date(dateStr)
@@ -67,27 +70,11 @@ function CustomTooltip({ active, payload, period }) {
 
 export default function PriceChart({ ticker, currentPrice }) {
   const [period, setPeriod] = useState('1Y')
-  const [data, setData] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(false)
-
-  const fetchHistory = useCallback((p) => {
-    setLoading(true)
-    setError(false)
-    getHistory(ticker, p)
-      .then(res => {
-        setData(res.data || [])
-        setLoading(false)
-      })
-      .catch(() => {
-        setError(true)
-        setLoading(false)
-      })
-  }, [ticker])
-
-  useEffect(() => {
-    fetchHistory(period)
-  }, [fetchHistory, period])
+  // Keyed by ticker + period: switching period aborts the previous request and
+  // loading/error are derived from whether the latest result matches the key.
+  const history = useRequest(`${ticker}:${period}`, (signal) => getHistory(ticker, period, { signal }))
+  const { loading, error } = history
+  const data = Array.isArray(history.data) ? history.data : EMPTY
 
   // Derived stats
   const first = data[0]?.close
@@ -97,10 +84,10 @@ export default function PriceChart({ ticker, currentPrice }) {
   const isUp = change == null ? true : change >= 0
 
   const accentColor = isUp ? 'var(--accent-green)' : 'var(--accent-red)'
-  const accentHex = isUp ? '#00ff88' : '#ff4d4d'
+  const accentHex = isUp ? '#00ff88' : '#ff4466'
 
   // Tick count by period
-  const tickCount = { '1W': 7, '1M': 6, '3M': 6, '6M': 6, '1Y': 6, '2Y': 5 }[period] || 6
+  const tickCount = { '1W': 7, '1M': 6, '3M': 6, '6M': 6, '1Y': 6, '2Y': 5, '5Y': 5 }[period] || 6
 
   // X-axis tick label formatter
   const xTickFmt = (v) => {
@@ -112,7 +99,7 @@ export default function PriceChart({ ticker, currentPrice }) {
   }
 
   return (
-    <div style={styles.card}>
+    <section className="panel" style={styles.card} aria-label="Price chart">
       {/* Header row */}
       <div style={styles.cardHeader}>
         <span style={styles.cardLabel}>PRICE CHART</span>
@@ -121,6 +108,7 @@ export default function PriceChart({ ticker, currentPrice }) {
             <button
               key={p}
               style={{ ...styles.periodBtn, ...(p === period ? styles.periodBtnActive : {}) }}
+              aria-pressed={p === period}
               onClick={() => setPeriod(p)}
             >
               {p}
@@ -151,12 +139,16 @@ export default function PriceChart({ ticker, currentPrice }) {
         )}
         {error && !loading && (
           <div style={styles.overlay}>
-            <span style={styles.errorMsg}>FAILED TO LOAD CHART DATA</span>
+            <span style={styles.errorMsg}>
+              FAILED TO LOAD CHART DATA
+              <span style={styles.errorDetail}>{getErrorDetail(error)}</span>
+              <button type="button" className="btn btn--small" onClick={history.reload}>RETRY</button>
+            </span>
           </div>
         )}
         {!loading && !error && data.length > 0 && (
           <ResponsiveContainer width="100%" height={220}>
-            <AreaChart data={data} margin={{ top: 8, right: 0, left: 0, bottom: 0 }}>
+            <AreaChart data={data} margin={{ top: 8, right: 0, left: 14, bottom: 0 }}>
               <defs>
                 <linearGradient id={`chartGrad-${ticker}`} x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%"  stopColor={accentHex} stopOpacity={0.25} />
@@ -172,6 +164,7 @@ export default function PriceChart({ ticker, currentPrice }) {
                 axisLine={{ stroke: 'var(--border)' }}
                 tickLine={false}
                 interval="preserveStartEnd"
+                minTickGap={28}
               />
               <YAxis
                 domain={['auto', 'auto']}
@@ -226,19 +219,20 @@ export default function PriceChart({ ticker, currentPrice }) {
           </div>
         )
       })()}
-    </div>
+    </section>
   )
 }
 
 const styles = {
   card: {
-    background: 'var(--bg-card)',
-    padding: '24px 24px 20px',
+    paddingBottom: '20px',
   },
   cardHeader: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: '8px',
     marginBottom: '14px',
   },
   cardLabel: {
@@ -249,6 +243,7 @@ const styles = {
   },
   periodRow: {
     display: 'flex',
+    flexWrap: 'wrap',
     gap: '2px',
   },
   periodBtn: {
@@ -269,7 +264,8 @@ const styles = {
   statsRow: {
     display: 'flex',
     alignItems: 'baseline',
-    gap: '12px',
+    flexWrap: 'wrap',
+    gap: '8px 12px',
     marginBottom: '16px',
   },
   currentPrice: {
@@ -312,10 +308,21 @@ const styles = {
     animation: 'spin 0.8s linear infinite',
   },
   errorMsg: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '10px',
+    textAlign: 'center',
     fontFamily: 'var(--font-mono)',
     fontSize: '10px',
     color: 'var(--accent-red)',
     letterSpacing: '2px',
+    padding: '0 16px',
+  },
+  errorDetail: {
+    fontSize: '10px',
+    letterSpacing: '0.5px',
+    color: 'var(--text-muted)',
   },
   // 52w range bar
   rangeWrap: {

@@ -1,46 +1,32 @@
-export default function Loader({ ticker }) {
+/** Inline loading state for a panel. */
+export default function Loader({ label = 'LOADING', sub, minHeight = 220 }) {
   return (
-    <div style={styles.page}>
-      <div style={styles.box}>
-        <div style={styles.spinner} />
-        <div style={styles.label}>ANALYZING {ticker}</div>
-        <div style={styles.sub}>Fetching filings · Scanning news · Running AI model</div>
-      </div>
+    <div className="panel" style={{ ...styles.box, minHeight }} role="status" aria-live="polite">
+      <span className="spinner" aria-hidden="true" />
+      <div style={styles.label}>{label}</div>
+      {sub && <div style={styles.sub}>{sub}</div>}
     </div>
   )
 }
 
 const styles = {
-  page: {
-    minHeight: '100vh',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    background: 'var(--bg-primary)',
-  },
   box: {
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
-    gap: '20px',
-  },
-  spinner: {
-    width: '48px',
-    height: '48px',
-    border: '2px solid var(--border-bright)',
-    borderTop: '2px solid var(--accent-green)',
-    borderRadius: '50%',
-    animation: 'spin 0.8s linear infinite',
+    justifyContent: 'center',
+    gap: '16px',
+    textAlign: 'center',
   },
   label: {
     fontFamily: 'var(--font-mono)',
-    fontSize: '14px',
+    fontSize: '12px',
     color: 'var(--accent-green)',
     letterSpacing: '4px',
   },
   sub: {
     fontFamily: 'var(--font-mono)',
-    fontSize: '11px',
+    fontSize: '10px',
     color: 'var(--text-muted)',
     letterSpacing: '1px',
   },
